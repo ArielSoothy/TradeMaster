@@ -101,6 +101,7 @@ export interface StockInfo {
   name: string;
   volatility: VolatilityLevel;
   category: StockCategory;
+  changePercent?: number; // Daily % change (for top movers)
 }
 
 export type StockCategory = 'all' | 'meme' | 'crypto' | 'tech' | 'leveraged' | 'bluechip';
@@ -242,12 +243,13 @@ export async function fetchDailyGainers(limit = 5): Promise<StockInfo[]> {
 
     if (!quotes || quotes.length === 0) throw new Error('No gainers data');
 
-    // Transform to StockInfo format
-    return quotes.slice(0, limit).map((quote: { symbol: string; shortName?: string; longName?: string }) => ({
+    // Transform to StockInfo format with % change
+    return quotes.slice(0, limit).map((quote: { symbol: string; shortName?: string; longName?: string; regularMarketChangePercent?: number }) => ({
       symbol: quote.symbol,
       name: quote.shortName || quote.longName || quote.symbol,
       volatility: 'extreme' as VolatilityLevel,
       category: 'all' as StockCategory,
+      changePercent: quote.regularMarketChangePercent,
     }));
   } catch (error) {
     console.warn('Failed to fetch daily gainers, using fallback:', error);
