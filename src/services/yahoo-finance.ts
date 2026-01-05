@@ -102,6 +102,8 @@ export interface StockInfo {
   volatility: VolatilityLevel;
   category: StockCategory;
   changePercent?: number; // Daily % change (for top movers)
+  volume?: number;        // Trading volume
+  price?: number;         // Current price
 }
 
 export type StockCategory = 'all' | 'meme' | 'crypto' | 'tech' | 'leveraged' | 'bluechip';
@@ -219,6 +221,59 @@ export function getRandomStock(category: StockCategory): StockInfo {
 export function getRandomStockByVolatility(level: VolatilityLevel): StockInfo {
   const stocks = getStocksByVolatility(level);
   return stocks[Math.floor(Math.random() * stocks.length)];
+}
+
+/**
+ * Screener filter options for low-float runners
+ */
+export interface ScreenerFilters {
+  minGapPercent?: number;    // Min % change (default 10)
+  maxGapPercent?: number;    // Max % change (default unlimited)
+  minVolume?: number;        // Min volume (default 500K)
+  maxPrice?: number;         // Max price (default $20)
+  minPrice?: number;         // Min price (default $1)
+  limit?: number;            // Max results (default 10)
+}
+
+/**
+ * Fetch low-float runners / small cap gainers
+ * Uses Yahoo's predefined small_cap_gainers screener
+ * These are small cap stocks with big % moves - perfect for day trading practice
+ */
+export async function fetchLowFloatRunners(filters: ScreenerFilters = {}): Promise<StockInfo[]> {
+  const { limit = 10 } = filters;
+
+  try {
+    // Try small_cap_gainers first - these are volatile small caps
+    const url = `${CORS_PROXY}${encodeURIComponent(
+      'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=small_cap_gainers&count=' + limit
+    )}`;
+
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+    });
+
+    if (!response.ok) throw new Error('Small cap screener failed');
+
+    const data = await response.json();
+    const quotes = data?.finance?.result?.[0]?.quotes;
+
+    if (!quotes || quotes.length === 0) throw new Error('No results');
+
+    return quotes.slice(0, limit).map((quote: { symbol: string; shortName?: string; longName?: string; regularMarketChangePercent?: number; regularMarketVolume?: number; regularMarketPrice?: number }) => ({
+      symbol: quote.symbol,
+      name: quote.shortName || quote.longName || quote.symbol,
+      volatility: 'extreme' as VolatilityLevel,
+      category: 'all' as StockCategory,
+      changePercent: quote.regularMarketChangePercent,
+      volume: quote.regularMarketVolume,
+      price: quote.regularMarketPrice,
+    }));
+  } catch (error) {
+    console.warn('Small cap screener failed, falling back to day_gainers:', error);
+    // Fallback to standard day_gainers
+    return fetchDailyGainers(limit);
+  }
 }
 
 /**

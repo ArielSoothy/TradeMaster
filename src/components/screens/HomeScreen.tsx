@@ -5,7 +5,7 @@ import {
   fetchStockData,
   getStocksByCategory,
   getRandomStock,
-  fetchDailyGainers,
+  fetchLowFloatRunners,
   CATEGORY_INFO,
   VOLATILITY_INFO,
   type TimeRange,
@@ -45,12 +45,12 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
   const [dailyGainers, setDailyGainers] = useState<StockInfo[]>([]);
   const [gainersLoading, setGainersLoading] = useState(false);
 
-  // Fetch daily gainers on mount
+  // Fetch small cap gainers on mount (volatile small caps with big moves)
   useEffect(() => {
     const loadGainers = async () => {
       setGainersLoading(true);
       try {
-        const gainers = await fetchDailyGainers(5);
+        const gainers = await fetchLowFloatRunners({ limit: 5 });
         setDailyGainers(gainers);
       } catch (err) {
         console.error('Failed to load gainers:', err);
@@ -344,7 +344,8 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
           transition={{ delay: 0.22 }}
         >
           <h2 className="text-sm text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <span>🔥</span> Today's Top Movers
+            <span>🚀</span> Small Cap Runners
+            <span className="text-[10px] text-gray-600">(volatile small caps with big moves)</span>
             {gainersLoading && <span className="text-xs">(loading...)</span>}
           </h2>
           <div className="flex gap-2 overflow-x-auto pb-2">
@@ -366,6 +367,9 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
                   <div>
                     <div className="font-bold">{stock.symbol}</div>
                     <div className="text-xs text-gray-400 max-w-[100px] truncate">{stock.name}</div>
+                    {stock.price !== undefined && (
+                      <div className="text-[10px] text-gray-500">${stock.price.toFixed(2)}</div>
+                    )}
                   </div>
                   {stock.changePercent !== undefined && (
                     <span className="text-green-400 font-bold text-sm ml-auto">
