@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+/* Custom CSS Variables */
+:root {
+  --color-profit: #22c55e;
+  --color-loss: #ef4444;
+  --color-accent: #667eea;
+  --color-bg-dark: #0f0f0f;
+  --color-bg-card: rgba(255, 255, 255, 0.05);
+}
+
+/* Base Styles */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--color-bg-dark);
+  color: white;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Glass Morphism Cards */
+.glass-card {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+}
+
+/* Profit/Loss Glow Effects */
+.profit-glow {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
+}
+
+.loss-glow {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+}
+
+/* Chart Container */
+.chart-container {
+  background: linear-gradient(180deg, rgba(15, 15, 15, 0) 0%, rgba(15, 15, 15, 0.8) 100%);
+}
+
+/* Button Styles */
+.btn-buy {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  transition: all 0.2s ease;
+}
+
+.btn-buy:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0 30px rgba(34, 197, 94, 0.5);
+}
+
+.btn-buy:active {
+  transform: scale(0.98);
+}
+
+.btn-sell {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  transition: all 0.2s ease;
+}
+
+.btn-sell:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+}
+
+.btn-sell:active {
+  transform: scale(0.98);
+}
+
+/* Leverage Button */
+.leverage-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.2s ease;
+}
+
+.leverage-btn.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+/* Animations */
+@keyframes pulse-profit {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes pulse-loss {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-profit {
+  animation: pulse-profit 0.5s ease-in-out;
+}
+
+.animate-loss {
+  animation: pulse-loss 0.5s ease-in-out;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
