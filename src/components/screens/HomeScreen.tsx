@@ -4,6 +4,7 @@ import {
   searchStocks,
   fetchStockData,
   getStocksByCategory,
+  getRandomStock,
   CATEGORY_INFO,
   VOLATILITY_INFO,
   type TimeRange,
@@ -50,7 +51,7 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
     /^[A-Za-z]+$/.test(searchQuery) &&
     filteredStocks.length === 0;
 
-  const handleSelectStock = useCallback(async (symbol: string) => {
+  const handleSelectStock = useCallback(async (symbol: string, mysteryMode = false) => {
     setIsLoading(true);
     setError(null);
 
@@ -65,7 +66,7 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
         throw new Error(`Not enough data for ${symbol.toUpperCase()}. Try a different range or stock.`);
       }
 
-      dispatch({ type: 'LOAD_DATA', payload: { symbol: symbol.toUpperCase(), data } });
+      dispatch({ type: 'LOAD_DATA', payload: { symbol: symbol.toUpperCase(), data, mysteryMode } });
       dispatch({ type: 'START_GAME' });
       onStartGame();
     } catch (err) {
@@ -74,6 +75,12 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
       setIsLoading(false);
     }
   }, [dispatch, onStartGame, selectedRange, selectedInterval]);
+
+  // Handle mystery mode - random stock from category
+  const handleMysteryMode = useCallback(async (category: StockCategory) => {
+    const randomStock = getRandomStock(category);
+    await handleSelectStock(randomStock.symbol, true);
+  }, [handleSelectStock]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && searchQuery.trim()) {
@@ -233,7 +240,7 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
 
       {/* Category Tabs */}
       <motion.div
-        className="w-full max-w-3xl mb-6"
+        className="w-full max-w-3xl mb-4"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.18 }}
@@ -257,6 +264,33 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
               </button>
             );
           })}
+        </div>
+      </motion.div>
+
+      {/* Mystery Mode Buttons */}
+      <motion.div
+        className="w-full max-w-3xl mb-6"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+      >
+        <div className="flex flex-wrap justify-center gap-2">
+          <button
+            onClick={() => handleMysteryMode(selectedCategory)}
+            disabled={isLoading}
+            className="px-6 py-3 rounded-xl font-bold text-white
+                       bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500
+                       hover:from-pink-600 hover:via-red-600 hover:to-yellow-600
+                       shadow-lg shadow-red-500/25 transition-all
+                       disabled:opacity-50 disabled:cursor-not-allowed
+                       flex items-center gap-2"
+          >
+            <span className="text-xl">🎲</span>
+            <span>Mystery {CATEGORY_INFO[selectedCategory].label}</span>
+          </button>
+          <div className="text-xs text-gray-500 w-full text-center mt-2">
+            Random stock • Hidden identity • Pure skill test
+          </div>
         </div>
       </motion.div>
 

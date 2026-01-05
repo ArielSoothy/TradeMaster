@@ -16,9 +16,11 @@ interface TradingChartProps {
   position: Position | null;
   isPlaying: boolean;
   chartMode?: ChartMode;
+  mysteryMode?: boolean;
+  basePrice?: number;
 }
 
-export function TradingChart({ data, currentIndex, position, isPlaying, chartMode = 'candles' }: TradingChartProps) {
+export function TradingChart({ data, currentIndex, position, isPlaying, chartMode = 'candles', mysteryMode = false, basePrice = 0 }: TradingChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -31,7 +33,8 @@ export function TradingChart({ data, currentIndex, position, isPlaying, chartMod
   const prevPriceRef = useRef<number | null>(null);
   const targetPriceRef = useRef<number | null>(null);
   const animationStartRef = useRef<number>(0);
-  const ANIMATION_DURATION = 400; // ms for smooth transition
+  const lastIndexRef = useRef<number>(-1);
+  const ANIMATION_DURATION = 450; // ms - slightly less than tick interval for smooth overlap
 
   // Get visible data up to current index for candlesticks
   const visibleCandleData = useMemo(() => {
@@ -46,45 +49,59 @@ export function TradingChart({ data, currentIndex, position, isPlaying, chartMod
     })) as AreaData<Time>[];
   }, [data, currentIndex]);
 
-  // Animate price transitions for smooth flowing effect
+  // Animate price transitions for smooth flowing effect in line mode
   useEffect(() => {
-    if (chartMode !== 'line' || !isPlaying || data.length === 0) return;
+    if (chartMode !== 'line' || data.length === 0) return;
 
     const currentPrice = data[currentIndex]?.close;
     if (currentPrice === undefined) return;
 
-    // Initialize on first render
-    if (prevPriceRef.current === null) {
-      prevPriceRef.current = currentPrice;
-      setAnimatedPrice(currentPrice);
-      return;
-    }
+    // Check if this is a new candle (index changed)
+    const isNewCandle = currentIndex !== lastIndexRef.current;
 
-    // Start animation to new price
-    if (currentPrice !== targetPriceRef.current) {
-      prevPriceRef.current = animatedPrice ?? currentPrice;
+    if (isNewCandle) {
+      lastIndexRef.current = currentIndex;
+
+      // Get the previous candle's close price for smooth transition
+      const prevPrice = currentIndex > 0
+        ? data[currentIndex - 1]?.close ?? currentPrice
+        : currentPrice;
+
+      // If we have no animated price yet, start from previous candle
+      if (animatedPrice === null) {
+        prevPriceRef.current = prevPrice;
+        setAnimatedPrice(prevPrice);
+      } else {
+        // Use current animated position as start point
+        prevPriceRef.current = animatedPrice;
+      }
+
       targetPriceRef.current = currentPrice;
       animationStartRef.current = performance.now();
 
+      // Cancel any existing animation
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+
+      // Start smooth animation
       const animate = (timestamp: number) => {
         const elapsed = timestamp - animationStartRef.current;
         const progress = Math.min(elapsed / ANIMATION_DURATION, 1);
         const easedProgress = easeOutCubic(progress);
 
-        const prev = prevPriceRef.current ?? currentPrice;
-        const target = targetPriceRef.current ?? currentPrice;
-        const interpolated = prev + (target - prev) * easedProgress;
+        const startPrice = prevPriceRef.current ?? currentPrice;
+        const endPrice = targetPriceRef.current ?? currentPrice;
+        const interpolated = startPrice + (endPrice - startPrice) * easedProgress;
 
         setAnimatedPrice(interpolated);
 
-        if (progress < 1) {
+        // Continue animation until complete
+        if (progress < 1 && chartMode === 'line') {
           animationRef.current = requestAnimationFrame(animate);
         }
       };
 
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
       animationRef.current = requestAnimationFrame(animate);
     }
 
@@ -93,7 +110,7 @@ export function TradingChart({ data, currentIndex, position, isPlaying, chartMod
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [currentIndex, chartMode, isPlaying, data, animatedPrice]);
+  }, [currentIndex, chartMode, data]);
 
   // Generate smooth interpolated line data with animated last point
   const smoothLineData = useMemo(() => {
@@ -251,15 +268,33 @@ export function TradingChart({ data, currentIndex, position, isPlaying, chartMod
       {/* Current price overlay */}
       {currentCandle && (
         <div className="absolute top-4 left-4 glass-card px-4 py-2">
-          <div className="text-2xl font-bold">
-            ${currentCandle.close.toFixed(2)}
-          </div>
-          <div className={`text-sm ${
-            currentCandle.close >= currentCandle.open ? 'text-green-400' : 'text-red-400'
-          }`}>
-            {currentCandle.close >= currentCandle.open ? '+' : ''}
-            {((currentCandle.close - currentCandle.open) / currentCandle.open * 100).toFixed(2)}%
-          </div>
+          {mysteryMode ? (
+            // Mystery mode: show only percentage from base
+            <>
+              <div className={`text-2xl font-bold ${
+                currentCandle.close >= basePrice ? 'text-green-400' : 'text-red-400'
+              }`}>
+                {currentCandle.close >= basePrice ? '+' : ''}
+                {((currentCandle.close - basePrice) / basePrice * 100).toFixed(2)}%
+              </div>
+              <div className="text-xs text-gray-500">
+                from session start
+              </div>
+            </>
+          ) : (
+            // Normal mode: show actual price
+            <>
+              <div className="text-2xl font-bold">
+                ${currentCandle.close.toFixed(2)}
+              </div>
+              <div className={`text-sm ${
+                currentCandle.close >= currentCandle.open ? 'text-green-400' : 'text-red-400'
+              }`}>
+                {currentCandle.close >= currentCandle.open ? '+' : ''}
+                {((currentCandle.close - currentCandle.open) / currentCandle.open * 100).toFixed(2)}%
+              </div>
+            </>
+          )}
         </div>
       )}
 

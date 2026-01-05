@@ -205,6 +205,22 @@ export function getVolatileStocks(): StockInfo[] {
 }
 
 /**
+ * Get a random stock from a category
+ */
+export function getRandomStock(category: StockCategory): StockInfo {
+  const stocks = category === 'all' ? STOCKS : getStocksByCategory(category);
+  return stocks[Math.floor(Math.random() * stocks.length)];
+}
+
+/**
+ * Get a random stock by volatility level
+ */
+export function getRandomStockByVolatility(level: VolatilityLevel): StockInfo {
+  const stocks = getStocksByVolatility(level);
+  return stocks[Math.floor(Math.random() * stocks.length)];
+}
+
+/**
  * Search stocks from predefined list
  */
 export function searchStocks(query: string, category: StockCategory = 'all'): StockInfo[] {

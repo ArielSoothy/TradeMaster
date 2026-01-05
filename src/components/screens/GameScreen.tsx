@@ -115,13 +115,26 @@ export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
             ← Back
           </button>
           <div>
-            <span className="text-xl font-bold">{state.symbol}</span>
-            <span className="text-gray-500 ml-2 text-sm">
-              {currentTime}
-            </span>
-            <span className="text-gray-600 ml-2 text-xs">
-              ({state.currentCandleIndex + 1}/{state.allCandleData.length})
-            </span>
+            {state.mysteryMode ? (
+              <>
+                <span className="text-xl font-bold bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500 bg-clip-text text-transparent">
+                  🎲 MYSTERY
+                </span>
+                <span className="text-gray-600 ml-2 text-xs">
+                  ({state.currentCandleIndex + 1}/{state.allCandleData.length})
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-xl font-bold">{state.symbol}</span>
+                <span className="text-gray-500 ml-2 text-sm">
+                  {currentTime}
+                </span>
+                <span className="text-gray-600 ml-2 text-xs">
+                  ({state.currentCandleIndex + 1}/{state.allCandleData.length})
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -181,6 +194,8 @@ export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
             position={state.position}
             isPlaying={state.isPlaying}
             chartMode={chartMode}
+            mysteryMode={state.mysteryMode}
+            basePrice={state.basePrice}
           />
         </div>
 

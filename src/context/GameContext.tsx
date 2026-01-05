@@ -10,6 +10,8 @@ const initialState: GameState = {
   symbol: '',
   allCandleData: [],
   currentCandleIndex: 0,
+  mysteryMode: false,
+  basePrice: 0,
   balance: STARTING_BALANCE,
   startingBalance: STARTING_BALANCE,
   position: null,
@@ -35,10 +37,13 @@ const initialState: GameState = {
 function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case 'LOAD_DATA': {
+      const firstCandle = action.payload.data[0];
       return {
         ...initialState,
         symbol: action.payload.symbol,
         allCandleData: action.payload.data,
+        mysteryMode: action.payload.mysteryMode ?? false,
+        basePrice: firstCandle?.open ?? 0, // Use first candle open as base for % calc
         gameStatus: 'idle',
         // Preserve XP and level from previous sessions
         xp: state.xp,

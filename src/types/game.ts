@@ -47,6 +47,10 @@ export interface GameState {
   allCandleData: CandleData[];
   currentCandleIndex: number;
 
+  // Mystery mode - hides stock identity
+  mysteryMode: boolean;
+  basePrice: number; // Starting price for % calculation
+
   // Trading
   balance: number;
   startingBalance: number;
@@ -77,7 +81,7 @@ export interface GameState {
 
 // Game actions
 export type GameAction =
-  | { type: 'LOAD_DATA'; payload: { symbol: string; data: CandleData[] } }
+  | { type: 'LOAD_DATA'; payload: { symbol: string; data: CandleData[]; mysteryMode?: boolean } }
   | { type: 'START_GAME'; payload?: { startIndex?: number } }
   | { type: 'TICK' }
   | { type: 'BUY' }
