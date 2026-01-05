@@ -1,23 +1,36 @@
 import { useEffect, useRef, useMemo } from 'react';
-import { createChart, CandlestickSeries, ColorType, CrosshairMode } from 'lightweight-charts';
-import type { IChartApi, ISeriesApi, CandlestickData, Time } from 'lightweight-charts';
+import { createChart, CandlestickSeries, AreaSeries, ColorType, CrosshairMode } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, CandlestickData, AreaData, Time } from 'lightweight-charts';
 import type { CandleData, Position } from '../../types/game';
+
+export type ChartMode = 'candles' | 'line';
 
 interface TradingChartProps {
   data: CandleData[];
   currentIndex: number;
   position: Position | null;
   isPlaying: boolean;
+  chartMode?: ChartMode;
 }
 
-export function TradingChart({ data, currentIndex, position, isPlaying }: TradingChartProps) {
+export function TradingChart({ data, currentIndex, position, isPlaying, chartMode = 'candles' }: TradingChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const areaSeriesRef = useRef<ISeriesApi<'Area'> | null>(null);
+  const prevChartModeRef = useRef<ChartMode>(chartMode);
 
-  // Get visible data up to current index
-  const visibleData = useMemo(() => {
+  // Get visible data up to current index for candlesticks
+  const visibleCandleData = useMemo(() => {
     return data.slice(0, currentIndex + 1) as CandlestickData<Time>[];
+  }, [data, currentIndex]);
+
+  // Get visible data for line/area chart (close prices)
+  const visibleLineData = useMemo(() => {
+    return data.slice(0, currentIndex + 1).map(candle => ({
+      time: candle.time,
+      value: candle.close,
+    })) as AreaData<Time>[];
   }, [data, currentIndex]);
 
   // Current candle for price display
@@ -70,6 +83,7 @@ export function TradingChart({ data, currentIndex, position, isPlaying }: Tradin
       },
     });
 
+    // Create candlestick series
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#22c55e',
       downColor: '#ef4444',
@@ -77,10 +91,25 @@ export function TradingChart({ data, currentIndex, position, isPlaying }: Tradin
       borderDownColor: '#ef4444',
       wickUpColor: '#22c55e',
       wickDownColor: '#ef4444',
+      visible: chartMode === 'candles',
+    });
+
+    // Create area series for smooth line mode
+    const areaSeries = chart.addSeries(AreaSeries, {
+      lineColor: '#8b5cf6',
+      topColor: 'rgba(139, 92, 246, 0.4)',
+      bottomColor: 'rgba(139, 92, 246, 0.0)',
+      lineWidth: 3,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 6,
+      crosshairMarkerBorderColor: '#8b5cf6',
+      crosshairMarkerBackgroundColor: '#1f1f1f',
+      visible: chartMode === 'line',
     });
 
     chartRef.current = chart;
-    seriesRef.current = candleSeries;
+    candleSeriesRef.current = candleSeries;
+    areaSeriesRef.current = areaSeries;
 
     // Handle resize
     const handleResize = () => {
@@ -103,15 +132,37 @@ export function TradingChart({ data, currentIndex, position, isPlaying }: Tradin
 
   // Update chart data
   useEffect(() => {
-    if (!seriesRef.current || visibleData.length === 0) return;
+    if (visibleCandleData.length === 0) return;
 
-    seriesRef.current.setData(visibleData);
+    // Update candlestick data
+    if (candleSeriesRef.current) {
+      candleSeriesRef.current.setData(visibleCandleData);
+    }
+
+    // Update area/line data
+    if (areaSeriesRef.current) {
+      areaSeriesRef.current.setData(visibleLineData);
+    }
 
     // Auto-scroll to latest candle when playing
     if (chartRef.current && isPlaying) {
       chartRef.current.timeScale().scrollToRealTime();
     }
-  }, [visibleData, isPlaying]);
+  }, [visibleCandleData, visibleLineData, isPlaying]);
+
+  // Handle chart mode switching
+  useEffect(() => {
+    if (prevChartModeRef.current !== chartMode) {
+      // Toggle visibility
+      if (candleSeriesRef.current) {
+        candleSeriesRef.current.applyOptions({ visible: chartMode === 'candles' });
+      }
+      if (areaSeriesRef.current) {
+        areaSeriesRef.current.applyOptions({ visible: chartMode === 'line' });
+      }
+      prevChartModeRef.current = chartMode;
+    }
+  }, [chartMode]);
 
   // Position entry marker effect is handled via UI overlay instead of chart markers
   // (chart markers API changed in v5)

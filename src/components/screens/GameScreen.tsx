@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { TradingChart } from '../game/TradingChart';
+import { TradingChart, type ChartMode } from '../game/TradingChart';
 import { TradeButtons } from '../game/TradeButtons';
 import { LeverageSelector } from '../game/LeverageSelector';
 import { SpeedSelector } from '../game/SpeedSelector';
@@ -38,6 +38,9 @@ export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
   } = useGameEngine();
 
   const { playSound } = useSound();
+
+  // Chart mode state
+  const [chartMode, setChartMode] = useState<ChartMode>('candles');
 
   // Track last trade for profit burst effect
   const [showProfitBurst, setShowProfitBurst] = useState(false);
@@ -122,12 +125,40 @@ export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
           </div>
         </div>
 
-        <SpeedSelector
-          value={state.speed}
-          onChange={setSpeed}
-          isPlaying={state.isPlaying}
-          onTogglePlay={togglePlay}
-        />
+        <div className="flex items-center gap-3">
+          {/* Chart Mode Toggle */}
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
+            <button
+              onClick={() => setChartMode('candles')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                chartMode === 'candles'
+                  ? 'bg-indigo-500 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+              title="Candlestick Chart"
+            >
+              📊
+            </button>
+            <button
+              onClick={() => setChartMode('line')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                chartMode === 'line'
+                  ? 'bg-purple-500 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+              title="Smooth Line Chart"
+            >
+              〰️
+            </button>
+          </div>
+
+          <SpeedSelector
+            value={state.speed}
+            onChange={setSpeed}
+            isPlaying={state.isPlaying}
+            onTogglePlay={togglePlay}
+          />
+        </div>
       </div>
 
       {/* Progress Bar */}
@@ -149,6 +180,7 @@ export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
             currentIndex={state.currentCandleIndex}
             position={state.position}
             isPlaying={state.isPlaying}
+            chartMode={chartMode}
           />
         </div>
 
