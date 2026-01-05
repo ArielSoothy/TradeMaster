@@ -221,6 +221,79 @@ export function getRandomStockByVolatility(level: VolatilityLevel): StockInfo {
 }
 
 /**
+ * Fetch daily top gainers from Yahoo Finance
+ * Falls back to volatile stocks if API fails
+ */
+export async function fetchDailyGainers(limit = 5): Promise<StockInfo[]> {
+  try {
+    // Try Yahoo Finance screener API for day gainers
+    const url = `${CORS_PROXY}${encodeURIComponent(
+      'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=day_gainers&count=' + limit
+    )}`;
+
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+    });
+
+    if (!response.ok) throw new Error('Screener API failed');
+
+    const data = await response.json();
+    const quotes = data?.finance?.result?.[0]?.quotes;
+
+    if (!quotes || quotes.length === 0) throw new Error('No gainers data');
+
+    // Transform to StockInfo format
+    return quotes.slice(0, limit).map((quote: { symbol: string; shortName?: string; longName?: string }) => ({
+      symbol: quote.symbol,
+      name: quote.shortName || quote.longName || quote.symbol,
+      volatility: 'extreme' as VolatilityLevel,
+      category: 'all' as StockCategory,
+    }));
+  } catch (error) {
+    console.warn('Failed to fetch daily gainers, using fallback:', error);
+    // Fallback: return random extreme volatility stocks
+    const extremeStocks = getStocksByVolatility('extreme');
+    const shuffled = [...extremeStocks].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, limit);
+  }
+}
+
+/**
+ * Fetch daily top losers from Yahoo Finance
+ * Falls back to volatile stocks if API fails
+ */
+export async function fetchDailyLosers(limit = 5): Promise<StockInfo[]> {
+  try {
+    const url = `${CORS_PROXY}${encodeURIComponent(
+      'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=day_losers&count=' + limit
+    )}`;
+
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+    });
+
+    if (!response.ok) throw new Error('Screener API failed');
+
+    const data = await response.json();
+    const quotes = data?.finance?.result?.[0]?.quotes;
+
+    if (!quotes || quotes.length === 0) throw new Error('No losers data');
+
+    return quotes.slice(0, limit).map((quote: { symbol: string; shortName?: string; longName?: string }) => ({
+      symbol: quote.symbol,
+      name: quote.shortName || quote.longName || quote.symbol,
+      volatility: 'extreme' as VolatilityLevel,
+      category: 'all' as StockCategory,
+    }));
+  } catch (error) {
+    console.warn('Failed to fetch daily losers, using fallback:', error);
+    const extremeStocks = getStocksByVolatility('extreme');
+    const shuffled = [...extremeStocks].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, limit);
+  }
+}
+
+/**
  * Search stocks from predefined list
  */
 export function searchStocks(query: string, category: StockCategory = 'all'): StockInfo[] {

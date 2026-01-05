@@ -1,15 +1,17 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   searchStocks,
   fetchStockData,
   getStocksByCategory,
   getRandomStock,
+  fetchDailyGainers,
   CATEGORY_INFO,
   VOLATILITY_INFO,
   type TimeRange,
   type Interval,
   type StockCategory,
+  type StockInfo,
 } from '../../services/yahoo-finance';
 import { useGame } from '../../context/GameContext';
 
@@ -40,6 +42,24 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
   const [selectedRange, setSelectedRange] = useState<TimeRange>('5d');
   const [selectedInterval, setSelectedInterval] = useState<Interval>('5m');
   const [selectedCategory, setSelectedCategory] = useState<StockCategory>('all');
+  const [dailyGainers, setDailyGainers] = useState<StockInfo[]>([]);
+  const [gainersLoading, setGainersLoading] = useState(false);
+
+  // Fetch daily gainers on mount
+  useEffect(() => {
+    const loadGainers = async () => {
+      setGainersLoading(true);
+      try {
+        const gainers = await fetchDailyGainers(5);
+        setDailyGainers(gainers);
+      } catch (err) {
+        console.error('Failed to load gainers:', err);
+      } finally {
+        setGainersLoading(false);
+      }
+    };
+    loadGainers();
+  }, []);
 
   const filteredStocks = searchQuery
     ? searchStocks(searchQuery, selectedCategory)
@@ -267,32 +287,92 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
         </div>
       </motion.div>
 
-      {/* Mystery Mode Buttons */}
+      {/* Mystery Mode + Daily Gainers Row */}
       <motion.div
         className="w-full max-w-3xl mb-6"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
-        <div className="flex flex-wrap justify-center gap-2">
+        <div className="flex flex-wrap justify-center gap-3">
+          {/* Mystery Mode Button */}
           <button
             onClick={() => handleMysteryMode(selectedCategory)}
             disabled={isLoading}
-            className="px-6 py-3 rounded-xl font-bold text-white
+            className="px-5 py-3 rounded-xl font-bold text-white
                        bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500
                        hover:from-pink-600 hover:via-red-600 hover:to-yellow-600
                        shadow-lg shadow-red-500/25 transition-all
                        disabled:opacity-50 disabled:cursor-not-allowed
                        flex items-center gap-2"
           >
-            <span className="text-xl">🎲</span>
-            <span>Mystery {CATEGORY_INFO[selectedCategory].label}</span>
+            <span className="text-lg">🎲</span>
+            <span>Mystery</span>
           </button>
-          <div className="text-xs text-gray-500 w-full text-center mt-2">
-            Random stock • Hidden identity • Pure skill test
-          </div>
+
+          {/* Daily Gainers - Mystery Mode */}
+          {dailyGainers.length > 0 && (
+            <button
+              onClick={async () => {
+                const randomGainer = dailyGainers[Math.floor(Math.random() * dailyGainers.length)];
+                await handleSelectStock(randomGainer.symbol, true);
+              }}
+              disabled={isLoading || gainersLoading}
+              className="px-5 py-3 rounded-xl font-bold text-white
+                         bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500
+                         hover:from-green-600 hover:via-emerald-600 hover:to-teal-600
+                         shadow-lg shadow-green-500/25 transition-all
+                         disabled:opacity-50 disabled:cursor-not-allowed
+                         flex items-center gap-2"
+            >
+              <span className="text-lg">📈</span>
+              <span>Today's Gainer</span>
+            </button>
+          )}
+        </div>
+        <div className="text-xs text-gray-500 w-full text-center mt-2">
+          Random stock • Hidden identity • Pure skill test
         </div>
       </motion.div>
+
+      {/* Today's Hot Stocks */}
+      {dailyGainers.length > 0 && (
+        <motion.div
+          className="w-full max-w-3xl mb-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.22 }}
+        >
+          <h2 className="text-sm text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <span>🔥</span> Today's Top Movers
+            {gainersLoading && <span className="text-xs">(loading...)</span>}
+          </h2>
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {dailyGainers.map((stock, index) => (
+              <motion.button
+                key={stock.symbol}
+                onClick={() => handleSelectStock(stock.symbol)}
+                disabled={isLoading}
+                className="flex-shrink-0 glass-card px-4 py-3 hover:bg-white/10 transition-colors
+                           disabled:opacity-50 disabled:cursor-not-allowed"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.05 * index }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-green-400 font-bold">#{index + 1}</span>
+                  <div>
+                    <div className="font-bold">{stock.symbol}</div>
+                    <div className="text-xs text-gray-400 max-w-[100px] truncate">{stock.name}</div>
+                  </div>
+                </div>
+              </motion.button>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* Stock Grid */}
       <motion.div
