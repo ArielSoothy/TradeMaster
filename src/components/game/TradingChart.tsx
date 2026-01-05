@@ -1,9 +1,14 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import { createChart, CandlestickSeries, AreaSeries, ColorType, CrosshairMode } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, CandlestickData, AreaData, Time } from 'lightweight-charts';
 import type { CandleData, Position } from '../../types/game';
 
 export type ChartMode = 'candles' | 'line';
+
+// Easing function for smooth animation
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
+}
 
 interface TradingChartProps {
   data: CandleData[];
@@ -20,18 +25,90 @@ export function TradingChart({ data, currentIndex, position, isPlaying, chartMod
   const areaSeriesRef = useRef<ISeriesApi<'Area'> | null>(null);
   const prevChartModeRef = useRef<ChartMode>(chartMode);
 
+  // Animation state for smooth flowing line
+  const [animatedPrice, setAnimatedPrice] = useState<number | null>(null);
+  const animationRef = useRef<number | undefined>(undefined);
+  const prevPriceRef = useRef<number | null>(null);
+  const targetPriceRef = useRef<number | null>(null);
+  const animationStartRef = useRef<number>(0);
+  const ANIMATION_DURATION = 400; // ms for smooth transition
+
   // Get visible data up to current index for candlesticks
   const visibleCandleData = useMemo(() => {
     return data.slice(0, currentIndex + 1) as CandlestickData<Time>[];
   }, [data, currentIndex]);
 
-  // Get visible data for line/area chart (close prices)
+  // Get visible data for line/area chart (close prices) - without animation
   const visibleLineData = useMemo(() => {
     return data.slice(0, currentIndex + 1).map(candle => ({
       time: candle.time,
       value: candle.close,
     })) as AreaData<Time>[];
   }, [data, currentIndex]);
+
+  // Animate price transitions for smooth flowing effect
+  useEffect(() => {
+    if (chartMode !== 'line' || !isPlaying || data.length === 0) return;
+
+    const currentPrice = data[currentIndex]?.close;
+    if (currentPrice === undefined) return;
+
+    // Initialize on first render
+    if (prevPriceRef.current === null) {
+      prevPriceRef.current = currentPrice;
+      setAnimatedPrice(currentPrice);
+      return;
+    }
+
+    // Start animation to new price
+    if (currentPrice !== targetPriceRef.current) {
+      prevPriceRef.current = animatedPrice ?? currentPrice;
+      targetPriceRef.current = currentPrice;
+      animationStartRef.current = performance.now();
+
+      const animate = (timestamp: number) => {
+        const elapsed = timestamp - animationStartRef.current;
+        const progress = Math.min(elapsed / ANIMATION_DURATION, 1);
+        const easedProgress = easeOutCubic(progress);
+
+        const prev = prevPriceRef.current ?? currentPrice;
+        const target = targetPriceRef.current ?? currentPrice;
+        const interpolated = prev + (target - prev) * easedProgress;
+
+        setAnimatedPrice(interpolated);
+
+        if (progress < 1) {
+          animationRef.current = requestAnimationFrame(animate);
+        }
+      };
+
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+      animationRef.current = requestAnimationFrame(animate);
+    }
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [currentIndex, chartMode, isPlaying, data, animatedPrice]);
+
+  // Generate smooth interpolated line data with animated last point
+  const smoothLineData = useMemo(() => {
+    if (chartMode !== 'line' || visibleLineData.length === 0) return visibleLineData;
+
+    // Use animated price for the last point
+    const result = [...visibleLineData];
+    if (animatedPrice !== null && result.length > 0) {
+      result[result.length - 1] = {
+        ...result[result.length - 1],
+        value: animatedPrice,
+      };
+    }
+    return result;
+  }, [visibleLineData, animatedPrice, chartMode]);
 
   // Current candle for price display
   const currentCandle = data[currentIndex];
@@ -139,16 +216,16 @@ export function TradingChart({ data, currentIndex, position, isPlaying, chartMod
       candleSeriesRef.current.setData(visibleCandleData);
     }
 
-    // Update area/line data
+    // Update area/line data with smooth animation
     if (areaSeriesRef.current) {
-      areaSeriesRef.current.setData(visibleLineData);
+      areaSeriesRef.current.setData(chartMode === 'line' ? smoothLineData : visibleLineData);
     }
 
     // Auto-scroll to latest candle when playing
     if (chartRef.current && isPlaying) {
       chartRef.current.timeScale().scrollToRealTime();
     }
-  }, [visibleCandleData, visibleLineData, isPlaying]);
+  }, [visibleCandleData, visibleLineData, smoothLineData, isPlaying, chartMode]);
 
   // Handle chart mode switching
   useEffect(() => {

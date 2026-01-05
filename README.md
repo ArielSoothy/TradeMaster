@@ -9,7 +9,13 @@ An arcade-style day trading simulator with real historical stock data. Practice 
 - **Time Range Selection**: 1 Day, 5 Days, or 1 Month of historical data
 - **Chart Modes**:
   - 📊 **Candlestick Mode**: Realistic trading view
-  - 〰️ **Line Mode**: Smooth flowing wave animation (iOS game style)
+  - 〰️ **Line Mode**: Smooth flowing wave animation with easing (iOS game style)
+- **Volatility Categories**:
+  - 🎰 **Meme Stocks**: GME, AMC, BBBY - Extreme volatility
+  - 🪙 **Crypto**: BTC, ETH, DOGE, SOL - Wild price swings
+  - 🚀 **High Beta Tech**: TSLA, NVDA, AMD - High volatility
+  - ⚡ **Leveraged ETFs**: TQQQ, SQQQ, SPXL - 3x built-in leverage!
+  - 🌊 **Blue Chips**: AAPL, MSFT, SPY - Calmer trades
 - **Simple Controls**: B key = Buy, S key = Sell, Space = Pause
 - **Leverage Trading**: 1x, 2x, 5x, 10x options
 - **Speed Control**: 1x, 2x, 4x playback speed

@@ -93,40 +93,124 @@ function transformToCandles(result: YahooChartResponse['chart']['result'][0]): C
   return candles;
 }
 
+// Volatility levels for categorization
+export type VolatilityLevel = 'extreme' | 'high' | 'medium' | 'low';
+
+export interface StockInfo {
+  symbol: string;
+  name: string;
+  volatility: VolatilityLevel;
+  category: StockCategory;
+}
+
+export type StockCategory = 'all' | 'meme' | 'crypto' | 'tech' | 'leveraged' | 'bluechip';
+
+// Category display info
+export const CATEGORY_INFO: Record<StockCategory, { label: string; emoji: string; description: string }> = {
+  all: { label: 'All', emoji: '📊', description: 'All stocks' },
+  meme: { label: 'Meme', emoji: '🎰', description: 'High risk meme stocks' },
+  crypto: { label: 'Crypto', emoji: '🪙', description: 'Cryptocurrency' },
+  tech: { label: 'Tech', emoji: '🚀', description: 'High beta tech stocks' },
+  leveraged: { label: 'Leveraged', emoji: '⚡', description: '3x leveraged ETFs' },
+  bluechip: { label: 'Blue Chip', emoji: '🌊', description: 'Stable large caps' },
+};
+
+// Volatility display info
+export const VOLATILITY_INFO: Record<VolatilityLevel, { label: string; emoji: string; color: string }> = {
+  extreme: { label: 'EXTREME', emoji: '🔥', color: 'text-red-500' },
+  high: { label: 'HIGH', emoji: '⚡', color: 'text-orange-400' },
+  medium: { label: 'MEDIUM', emoji: '📈', color: 'text-yellow-400' },
+  low: { label: 'LOW', emoji: '🌊', color: 'text-blue-400' },
+};
+
 /**
- * Search for stocks by query
- * Note: Yahoo Finance search API requires different handling
- * For MVP, we'll use a predefined list of popular stocks
+ * Comprehensive stock list with volatility and category info
  */
-export const POPULAR_STOCKS = [
-  { symbol: 'AAPL', name: 'Apple Inc.' },
-  { symbol: 'GOOGL', name: 'Alphabet Inc.' },
-  { symbol: 'MSFT', name: 'Microsoft Corporation' },
-  { symbol: 'AMZN', name: 'Amazon.com Inc.' },
-  { symbol: 'TSLA', name: 'Tesla Inc.' },
-  { symbol: 'META', name: 'Meta Platforms Inc.' },
-  { symbol: 'NVDA', name: 'NVIDIA Corporation' },
-  { symbol: 'AMD', name: 'Advanced Micro Devices' },
-  { symbol: 'NFLX', name: 'Netflix Inc.' },
-  { symbol: 'DIS', name: 'The Walt Disney Company' },
-  { symbol: 'COIN', name: 'Coinbase Global Inc.' },
-  { symbol: 'SPY', name: 'S&P 500 ETF' },
-  { symbol: 'QQQ', name: 'Nasdaq-100 ETF' },
-  { symbol: 'GME', name: 'GameStop Corp.' },
-  { symbol: 'AMC', name: 'AMC Entertainment' },
-  { symbol: 'BA', name: 'Boeing Company' },
-  { symbol: 'JPM', name: 'JPMorgan Chase & Co.' },
-  { symbol: 'V', name: 'Visa Inc.' },
-  { symbol: 'JNJ', name: 'Johnson & Johnson' },
-  { symbol: 'WMT', name: 'Walmart Inc.' },
+export const STOCKS: StockInfo[] = [
+  // 🎰 MEME STOCKS - Extreme volatility
+  { symbol: 'GME', name: 'GameStop Corp.', volatility: 'extreme', category: 'meme' },
+  { symbol: 'AMC', name: 'AMC Entertainment', volatility: 'extreme', category: 'meme' },
+  { symbol: 'BBBY', name: 'Bed Bath & Beyond', volatility: 'extreme', category: 'meme' },
+  { symbol: 'BB', name: 'BlackBerry Ltd.', volatility: 'high', category: 'meme' },
+  { symbol: 'PLTR', name: 'Palantir Technologies', volatility: 'high', category: 'meme' },
+
+  // 🪙 CRYPTO - Extreme/High volatility
+  { symbol: 'BTC-USD', name: 'Bitcoin USD', volatility: 'extreme', category: 'crypto' },
+  { symbol: 'ETH-USD', name: 'Ethereum USD', volatility: 'extreme', category: 'crypto' },
+  { symbol: 'DOGE-USD', name: 'Dogecoin USD', volatility: 'extreme', category: 'crypto' },
+  { symbol: 'SOL-USD', name: 'Solana USD', volatility: 'extreme', category: 'crypto' },
+  { symbol: 'XRP-USD', name: 'Ripple USD', volatility: 'high', category: 'crypto' },
+  { symbol: 'COIN', name: 'Coinbase Global Inc.', volatility: 'high', category: 'crypto' },
+  { symbol: 'MARA', name: 'Marathon Digital', volatility: 'extreme', category: 'crypto' },
+  { symbol: 'RIOT', name: 'Riot Platforms', volatility: 'extreme', category: 'crypto' },
+
+  // 🚀 HIGH BETA TECH - High volatility
+  { symbol: 'TSLA', name: 'Tesla Inc.', volatility: 'high', category: 'tech' },
+  { symbol: 'NVDA', name: 'NVIDIA Corporation', volatility: 'high', category: 'tech' },
+  { symbol: 'AMD', name: 'Advanced Micro Devices', volatility: 'high', category: 'tech' },
+  { symbol: 'META', name: 'Meta Platforms Inc.', volatility: 'high', category: 'tech' },
+  { symbol: 'NFLX', name: 'Netflix Inc.', volatility: 'high', category: 'tech' },
+  { symbol: 'SHOP', name: 'Shopify Inc.', volatility: 'high', category: 'tech' },
+  { symbol: 'SQ', name: 'Block Inc.', volatility: 'high', category: 'tech' },
+  { symbol: 'ROKU', name: 'Roku Inc.', volatility: 'high', category: 'tech' },
+
+  // ⚡ LEVERAGED ETFs - Extreme volatility (3x leverage built in!)
+  { symbol: 'TQQQ', name: 'ProShares 3x QQQ', volatility: 'extreme', category: 'leveraged' },
+  { symbol: 'SQQQ', name: 'ProShares -3x QQQ', volatility: 'extreme', category: 'leveraged' },
+  { symbol: 'SPXL', name: 'Direxion 3x S&P 500', volatility: 'extreme', category: 'leveraged' },
+  { symbol: 'SPXS', name: 'Direxion -3x S&P 500', volatility: 'extreme', category: 'leveraged' },
+  { symbol: 'SOXL', name: 'Direxion 3x Semis', volatility: 'extreme', category: 'leveraged' },
+  { symbol: 'LABU', name: 'Direxion 3x Biotech', volatility: 'extreme', category: 'leveraged' },
+
+  // 🌊 BLUE CHIP - Low/Medium volatility
+  { symbol: 'AAPL', name: 'Apple Inc.', volatility: 'medium', category: 'bluechip' },
+  { symbol: 'MSFT', name: 'Microsoft Corporation', volatility: 'medium', category: 'bluechip' },
+  { symbol: 'GOOGL', name: 'Alphabet Inc.', volatility: 'medium', category: 'bluechip' },
+  { symbol: 'AMZN', name: 'Amazon.com Inc.', volatility: 'medium', category: 'bluechip' },
+  { symbol: 'JPM', name: 'JPMorgan Chase & Co.', volatility: 'low', category: 'bluechip' },
+  { symbol: 'V', name: 'Visa Inc.', volatility: 'low', category: 'bluechip' },
+  { symbol: 'JNJ', name: 'Johnson & Johnson', volatility: 'low', category: 'bluechip' },
+  { symbol: 'WMT', name: 'Walmart Inc.', volatility: 'low', category: 'bluechip' },
+  { symbol: 'KO', name: 'Coca-Cola Company', volatility: 'low', category: 'bluechip' },
+  { symbol: 'PG', name: 'Procter & Gamble', volatility: 'low', category: 'bluechip' },
+  { symbol: 'SPY', name: 'S&P 500 ETF', volatility: 'low', category: 'bluechip' },
+  { symbol: 'QQQ', name: 'Nasdaq-100 ETF', volatility: 'medium', category: 'bluechip' },
+  { symbol: 'DIS', name: 'The Walt Disney Company', volatility: 'medium', category: 'bluechip' },
+  { symbol: 'BA', name: 'Boeing Company', volatility: 'medium', category: 'bluechip' },
 ];
+
+// Legacy export for backwards compatibility
+export const POPULAR_STOCKS = STOCKS;
+
+/**
+ * Get stocks by category
+ */
+export function getStocksByCategory(category: StockCategory): StockInfo[] {
+  if (category === 'all') return STOCKS;
+  return STOCKS.filter(stock => stock.category === category);
+}
+
+/**
+ * Get stocks by volatility level
+ */
+export function getStocksByVolatility(level: VolatilityLevel): StockInfo[] {
+  return STOCKS.filter(stock => stock.volatility === level);
+}
+
+/**
+ * Get high volatility stocks (extreme + high)
+ */
+export function getVolatileStocks(): StockInfo[] {
+  return STOCKS.filter(stock => stock.volatility === 'extreme' || stock.volatility === 'high');
+}
 
 /**
  * Search stocks from predefined list
  */
-export function searchStocks(query: string): typeof POPULAR_STOCKS {
+export function searchStocks(query: string, category: StockCategory = 'all'): StockInfo[] {
   const lowerQuery = query.toLowerCase();
-  return POPULAR_STOCKS.filter(
+  const stocksToSearch = category === 'all' ? STOCKS : getStocksByCategory(category);
+  return stocksToSearch.filter(
     stock =>
       stock.symbol.toLowerCase().includes(lowerQuery) ||
       stock.name.toLowerCase().includes(lowerQuery)

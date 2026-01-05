@@ -1,6 +1,15 @@
 import { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { POPULAR_STOCKS, searchStocks, fetchStockData, type TimeRange, type Interval } from '../../services/yahoo-finance';
+import {
+  searchStocks,
+  fetchStockData,
+  getStocksByCategory,
+  CATEGORY_INFO,
+  VOLATILITY_INFO,
+  type TimeRange,
+  type Interval,
+  type StockCategory,
+} from '../../services/yahoo-finance';
 import { useGame } from '../../context/GameContext';
 
 interface HomeScreenProps {
@@ -19,6 +28,9 @@ const INTERVALS: { value: Interval; label: string }[] = [
   { value: '15m', label: '15min' },
 ];
 
+// Category tabs order
+const CATEGORIES: StockCategory[] = ['all', 'meme', 'crypto', 'tech', 'leveraged', 'bluechip'];
+
 export function HomeScreen({ onStartGame }: HomeScreenProps) {
   const { dispatch } = useGame();
   const [searchQuery, setSearchQuery] = useState('');
@@ -26,10 +38,11 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedRange, setSelectedRange] = useState<TimeRange>('5d');
   const [selectedInterval, setSelectedInterval] = useState<Interval>('5m');
+  const [selectedCategory, setSelectedCategory] = useState<StockCategory>('all');
 
   const filteredStocks = searchQuery
-    ? searchStocks(searchQuery)
-    : POPULAR_STOCKS;
+    ? searchStocks(searchQuery, selectedCategory)
+    : getStocksByCategory(selectedCategory);
 
   // Check if search query looks like a custom ticker
   const isCustomTicker = searchQuery.length >= 1 &&
@@ -218,34 +231,75 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
         </motion.div>
       )}
 
+      {/* Category Tabs */}
+      <motion.div
+        className="w-full max-w-3xl mb-6"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.18 }}
+      >
+        <div className="flex flex-wrap justify-center gap-2">
+          {CATEGORIES.map((cat) => {
+            const info = CATEGORY_INFO[cat];
+            const isSelected = selectedCategory === cat;
+            return (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2
+                  ${isSelected
+                    ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/25'
+                    : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                  }`}
+              >
+                <span>{info.emoji}</span>
+                <span>{info.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </motion.div>
+
       {/* Stock Grid */}
       <motion.div
-        className="w-full max-w-2xl"
+        className="w-full max-w-3xl"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
         <h2 className="text-sm text-gray-500 uppercase tracking-wider mb-3">
-          {searchQuery && filteredStocks.length > 0 ? 'Matching Stocks' : 'Popular Stocks'}
+          {searchQuery && filteredStocks.length > 0
+            ? 'Matching Stocks'
+            : `${CATEGORY_INFO[selectedCategory].emoji} ${CATEGORY_INFO[selectedCategory].label} Stocks`}
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {filteredStocks.slice(0, 12).map((stock, index) => (
-            <motion.button
-              key={stock.symbol}
-              onClick={() => handleSelectStock(stock.symbol)}
-              disabled={isLoading}
-              className="glass-card p-4 text-left hover:bg-white/10 transition-colors
-                         disabled:opacity-50 disabled:cursor-not-allowed"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.05 * index }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <div className="font-bold text-lg">{stock.symbol}</div>
-              <div className="text-xs text-gray-400 truncate">{stock.name}</div>
-            </motion.button>
-          ))}
+          {filteredStocks.slice(0, 16).map((stock, index) => {
+            const volInfo = VOLATILITY_INFO[stock.volatility];
+            return (
+              <motion.button
+                key={stock.symbol}
+                onClick={() => handleSelectStock(stock.symbol)}
+                disabled={isLoading}
+                className="glass-card p-4 text-left hover:bg-white/10 transition-colors
+                           disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.03 * index }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {/* Volatility Badge */}
+                <div className={`absolute top-2 right-2 text-xs font-bold ${volInfo.color}`}>
+                  {volInfo.emoji}
+                </div>
+                <div className="font-bold text-lg">{stock.symbol}</div>
+                <div className="text-xs text-gray-400 truncate mb-1">{stock.name}</div>
+                <div className={`text-[10px] font-semibold ${volInfo.color} opacity-75`}>
+                  {volInfo.label}
+                </div>
+              </motion.button>
+            );
+          })}
         </div>
 
         {filteredStocks.length === 0 && !isCustomTicker && (
