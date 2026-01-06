@@ -36,16 +36,27 @@ export function TradingChart({ data, currentIndex, position, isPlaying, chartMod
   const lastIndexRef = useRef<number>(-1);
   const ANIMATION_DURATION = 450; // ms - slightly less than tick interval for smooth overlap
 
+  // Use a base timestamp offset so the chart library interprets our indices as recent dates
+  // This prevents "01 Jan '70" from appearing on day boundaries
+  const BASE_TIMESTAMP = 1704067200; // Jan 1, 2024 00:00:00 UTC
+
   // Convert timestamp-based data to sequential index-based to avoid time gaps
   // This prevents weird horizontal lines when there are overnight/weekend gaps
+  // Store original timestamps for x-axis label formatting
   const indexedData = useMemo(() => {
     return data.map((candle, index) => ({
       ...candle,
-      // Use sequential index as "time" to avoid gaps
-      // Cast to Time type - lightweight-charts accepts numbers as business day indices
-      time: index as unknown as Time,
-      originalTime: candle.time, // Keep original for display
+      // Use base timestamp + index*60 (pretend 1 min intervals) to avoid gaps
+      // This tricks the library into thinking data is continuous recent data
+      time: (BASE_TIMESTAMP + index * 60) as unknown as Time,
+      originalTime: candle.time as number, // Keep original for display
     }));
+  }, [data]);
+
+  // Store data in ref so tickMarkFormatter can access current data
+  const dataRef = useRef<CandleData[]>(data);
+  useEffect(() => {
+    dataRef.current = data;
   }, [data]);
 
   // Get visible data up to current index for candlesticks
@@ -153,6 +164,26 @@ export function TradingChart({ data, currentIndex, position, isPlaying, chartMod
     if (!chartContainerRef.current) return;
 
     const chart = createChart(chartContainerRef.current, {
+      localization: {
+        timeFormatter: (time: number) => {
+          // time is BASE_TIMESTAMP + index*60, convert back to index
+          const BASE_TS = 1704067200;
+          const index = Math.round((time - BASE_TS) / 60);
+          const data = dataRef.current;
+          if (!data || data.length === 0) return '';
+          // Clamp to valid range to always show a meaningful time
+          const clampedIndex = Math.max(0, Math.min(index, data.length - 1));
+          const candle = data[clampedIndex];
+          if (!candle) return '';
+          const originalTimestamp = candle.time as number;
+          const date = new Date(originalTimestamp * 1000);
+          return date.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          });
+        },
+      },
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#9ca3af',
@@ -179,9 +210,32 @@ export function TradingChart({ data, currentIndex, position, isPlaying, chartMod
       },
       timeScale: {
         borderColor: 'rgba(255, 255, 255, 0.1)',
-        timeVisible: false, // Hide time labels since we use sequential indices
+        timeVisible: true,
         secondsVisible: false,
-        tickMarkFormatter: () => '', // Don't show tick marks
+        tickMarkFormatter: (time: number, tickMarkType: number) => {
+          // time is BASE_TIMESTAMP + index*60, convert back to index
+          const BASE_TS = 1704067200;
+          const index = Math.round((time - BASE_TS) / 60);
+          const data = dataRef.current;
+          if (!data || data.length === 0) return '';
+          // Clamp to valid range - always show nearest valid time
+          const clampedIndex = Math.max(0, Math.min(index, data.length - 1));
+          const candle = data[clampedIndex];
+          if (!candle) return '';
+          const originalTimestamp = candle.time as number;
+          if (!originalTimestamp || originalTimestamp < 1000000000) return '';
+          const date = new Date(originalTimestamp * 1000);
+          // tickMarkType: 0=Year, 1=Month, 2=DayOfMonth, 3=Time, 4=TimeWithSeconds
+          if (tickMarkType <= 2) {
+            // For date-type ticks, show date
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          }
+          return date.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          });
+        },
       },
       handleScroll: {
         mouseWheel: true,
