@@ -36,18 +36,36 @@ export function TradingChart({ data, currentIndex, position, isPlaying, chartMod
   const lastIndexRef = useRef<number>(-1);
   const ANIMATION_DURATION = 450; // ms - slightly less than tick interval for smooth overlap
 
+  // Convert timestamp-based data to sequential index-based to avoid time gaps
+  // This prevents weird horizontal lines when there are overnight/weekend gaps
+  const indexedData = useMemo(() => {
+    return data.map((candle, index) => ({
+      ...candle,
+      // Use sequential index as "time" to avoid gaps
+      // Cast to Time type - lightweight-charts accepts numbers as business day indices
+      time: index as unknown as Time,
+      originalTime: candle.time, // Keep original for display
+    }));
+  }, [data]);
+
   // Get visible data up to current index for candlesticks
   const visibleCandleData = useMemo(() => {
-    return data.slice(0, currentIndex + 1) as CandlestickData<Time>[];
-  }, [data, currentIndex]);
+    return indexedData.slice(0, currentIndex + 1).map(c => ({
+      time: c.time,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    })) as CandlestickData<Time>[];
+  }, [indexedData, currentIndex]);
 
   // Get visible data for line/area chart (close prices) - without animation
   const visibleLineData = useMemo(() => {
-    return data.slice(0, currentIndex + 1).map(candle => ({
+    return indexedData.slice(0, currentIndex + 1).map(candle => ({
       time: candle.time,
       value: candle.close,
     })) as AreaData<Time>[];
-  }, [data, currentIndex]);
+  }, [indexedData, currentIndex]);
 
   // Animate price transitions for smooth flowing effect in line mode
   useEffect(() => {
@@ -161,8 +179,9 @@ export function TradingChart({ data, currentIndex, position, isPlaying, chartMod
       },
       timeScale: {
         borderColor: 'rgba(255, 255, 255, 0.1)',
-        timeVisible: true,
+        timeVisible: false, // Hide time labels since we use sequential indices
         secondsVisible: false,
+        tickMarkFormatter: () => '', // Don't show tick marks
       },
       handleScroll: {
         mouseWheel: true,
