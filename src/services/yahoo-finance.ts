@@ -1,5 +1,6 @@
 import type { CandleData, YahooChartResponse } from '../types/game';
 import type { UTCTimestamp } from 'lightweight-charts';
+import { getCachedCandles, getCacheMeta, storeCandlesToCache } from './candle-cache';
 
 // CORS proxy for frontend access to Yahoo Finance
 const CORS_PROXY = 'https://corsproxy.io/?';
@@ -19,13 +20,13 @@ interface FetchStockDataParams {
 }
 
 /**
- * Fetch historical stock data from Yahoo Finance
- * For day trading: use 5m interval with 1mo range (good balance of data)
+ * Fetch historical stock data from Yahoo Finance (raw, no caching)
+ * For day trading: use 1m interval with 5d range (real-time feel)
  */
 export async function fetchStockData({
   symbol,
-  range = '1mo',
-  interval = '5m',
+  range = '5d',
+  interval = '1m',
 }: FetchStockDataParams): Promise<CandleData[]> {
   const url = `${CORS_PROXY}${encodeURIComponent(
     `${YAHOO_CHART_URL}/${symbol}?range=${range}&interval=${interval}&includePrePost=false`
@@ -91,6 +92,63 @@ function transformToCandles(result: YahooChartResponse['chart']['result'][0]): C
   }
 
   return candles;
+}
+
+/**
+ * Fetch stock data with IndexedDB caching for 1-minute candles.
+ * - For 1m interval: Uses cache, fetches only missing/fresh data
+ * - For other intervals: Fetches directly (no caching)
+ *
+ * Cache accumulates data over time for better historical coverage.
+ */
+export async function fetchStockDataWithCache({
+  symbol,
+  interval = '1m',
+}: Omit<FetchStockDataParams, 'range'>): Promise<CandleData[]> {
+  const upperSymbol = symbol.toUpperCase();
+
+  // Only cache 1-minute data
+  if (interval === '1m') {
+    try {
+      const meta = await getCacheMeta(upperSymbol);
+      const now = Date.now() / 1000;
+      const sevenDaysAgo = now - 7 * 24 * 60 * 60;
+
+      // Determine if we need fresh data
+      const needsFresh = !meta || (now - meta.lastFetchTime) > 3600; // 1 hour staleness threshold
+
+      if (needsFresh) {
+        // Fetch new data: 5d for new cache, 1d for updates
+        const range = meta ? '1d' : '5d';
+        console.log(`[Cache] Fetching ${range} of 1m data for ${upperSymbol}`);
+
+        const fresh = await fetchStockData({ symbol: upperSymbol, range, interval: '1m' });
+
+        if (fresh.length > 0) {
+          await storeCandlesToCache(upperSymbol, fresh);
+          console.log(`[Cache] Stored ${fresh.length} candles for ${upperSymbol}`);
+        }
+      }
+
+      // Return cached data within valid 7-day window
+      const cached = await getCachedCandles(upperSymbol, sevenDaysAgo, now);
+
+      if (cached.length >= 50) {
+        console.log(`[Cache] Returning ${cached.length} cached candles for ${upperSymbol}`);
+        return cached;
+      }
+
+      // Fallback if cache is too small (shouldn't happen normally)
+      console.log(`[Cache] Cache too small (${cached.length}), fetching fresh`);
+      return fetchStockData({ symbol: upperSymbol, range: '5d', interval: '1m' });
+    } catch (error) {
+      console.warn('[Cache] IndexedDB error, falling back to direct fetch:', error);
+      return fetchStockData({ symbol: upperSymbol, range: '5d', interval: '1m' });
+    }
+  }
+
+  // For 5m/15m, no caching - just fetch directly
+  return fetchStockData({ symbol: upperSymbol, range: '1mo', interval });
 }
 
 // Volatility levels for categorization

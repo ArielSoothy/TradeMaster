@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   searchStocks,
-  fetchStockData,
+  fetchStockDataWithCache,
   getStocksByCategory,
   getRandomStock,
   fetchLowFloatRunners,
@@ -12,6 +12,7 @@ import {
   type Interval,
   type StockCategory,
   type StockInfo,
+  type VolatilityLevel,
 } from '../../services/yahoo-finance';
 import { useGame } from '../../context/GameContext';
 
@@ -34,14 +35,18 @@ const INTERVALS: { value: Interval; label: string }[] = [
 // Category tabs order
 const CATEGORIES: StockCategory[] = ['all', 'meme', 'crypto', 'tech', 'leveraged', 'bluechip'];
 
+// Volatility levels for filter
+const VOLATILITY_LEVELS: VolatilityLevel[] = ['extreme', 'high', 'medium', 'low'];
+
 export function HomeScreen({ onStartGame }: HomeScreenProps) {
   const { dispatch } = useGame();
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedRange, setSelectedRange] = useState<TimeRange>('5d');
-  const [selectedInterval, setSelectedInterval] = useState<Interval>('5m');
+  const [selectedInterval, setSelectedInterval] = useState<Interval>('1m'); // Default to 1-minute
   const [selectedCategory, setSelectedCategory] = useState<StockCategory>('all');
+  const [selectedVolatility, setSelectedVolatility] = useState<VolatilityLevel | 'all'>('all');
   const [dailyGainers, setDailyGainers] = useState<StockInfo[]>([]);
   const [gainersLoading, setGainersLoading] = useState(false);
 
@@ -61,9 +66,26 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
     loadGainers();
   }, []);
 
-  const filteredStocks = searchQuery
-    ? searchStocks(searchQuery, selectedCategory)
-    : getStocksByCategory(selectedCategory);
+  // Filter stocks by category and volatility
+  const filteredStocks = useMemo(() => {
+    let stocks = searchQuery
+      ? searchStocks(searchQuery, selectedCategory)
+      : getStocksByCategory(selectedCategory);
+
+    // Apply volatility filter
+    if (selectedVolatility !== 'all') {
+      stocks = stocks.filter(s => s.volatility === selectedVolatility);
+    }
+
+    return stocks;
+  }, [searchQuery, selectedCategory, selectedVolatility]);
+
+  // Auto-adjust range when 1m interval is selected (max 7 days for 1m data)
+  useEffect(() => {
+    if (selectedInterval === '1m' && !['1d', '5d'].includes(selectedRange)) {
+      setSelectedRange('5d');
+    }
+  }, [selectedInterval, selectedRange]);
 
   // Check if search query looks like a custom ticker
   const isCustomTicker = searchQuery.length >= 1 &&
@@ -76,9 +98,9 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
     setError(null);
 
     try {
-      const data = await fetchStockData({
+      // Use cache-aware fetch for 1m data (builds local history over time)
+      const data = await fetchStockDataWithCache({
         symbol: symbol.toUpperCase(),
-        range: selectedRange,
         interval: selectedInterval
       });
 
@@ -94,7 +116,7 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [dispatch, onStartGame, selectedRange, selectedInterval]);
+  }, [dispatch, onStartGame, selectedInterval]);
 
   // Handle mystery mode - random stock from category
   const handleMysteryMode = useCallback(async (category: StockCategory) => {
@@ -260,7 +282,7 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
 
       {/* Category Tabs */}
       <motion.div
-        className="w-full max-w-3xl mb-4"
+        className="w-full max-w-3xl mb-3"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.18 }}
@@ -277,6 +299,48 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
                   ${isSelected
                     ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/25'
                     : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                  }`}
+              >
+                <span>{info.emoji}</span>
+                <span>{info.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </motion.div>
+
+      {/* Volatility Filter Chips */}
+      <motion.div
+        className="w-full max-w-3xl mb-4"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.19 }}
+      >
+        <div className="flex flex-wrap justify-center gap-2">
+          {/* "All" volatility chip */}
+          <button
+            onClick={() => setSelectedVolatility('all')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all
+              ${selectedVolatility === 'all'
+                ? 'bg-white/20 text-white ring-1 ring-white/30'
+                : 'bg-white/5 text-gray-400 hover:bg-white/10'
+              }`}
+          >
+            Any Volatility
+          </button>
+
+          {/* Volatility level chips */}
+          {VOLATILITY_LEVELS.map((level) => {
+            const info = VOLATILITY_INFO[level];
+            const isSelected = selectedVolatility === level;
+            return (
+              <button
+                key={level}
+                onClick={() => setSelectedVolatility(level)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1
+                  ${isSelected
+                    ? `bg-white/20 ${info.color} ring-1 ring-current`
+                    : 'bg-white/5 text-gray-400 hover:bg-white/10'
                   }`}
               >
                 <span>{info.emoji}</span>
@@ -390,10 +454,17 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
-        <h2 className="text-sm text-gray-500 uppercase tracking-wider mb-3">
-          {searchQuery && filteredStocks.length > 0
-            ? 'Matching Stocks'
-            : `${CATEGORY_INFO[selectedCategory].emoji} ${CATEGORY_INFO[selectedCategory].label} Stocks`}
+        <h2 className="text-sm text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+          <span>
+            {searchQuery && filteredStocks.length > 0
+              ? 'Matching Stocks'
+              : `${CATEGORY_INFO[selectedCategory].emoji} ${CATEGORY_INFO[selectedCategory].label} Stocks`}
+          </span>
+          {selectedVolatility !== 'all' && (
+            <span className={`text-xs ${VOLATILITY_INFO[selectedVolatility].color}`}>
+              ({VOLATILITY_INFO[selectedVolatility].emoji} {VOLATILITY_INFO[selectedVolatility].label})
+            </span>
+          )}
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {filteredStocks.slice(0, 16).map((stock, index) => {

@@ -7,6 +7,7 @@ import { ScreenShakeProvider } from './components/effects/ScreenShake';
 import { ParticleProvider } from './components/effects/ParticleSystem';
 import { checkDailyStreak, loadProgress, recordSession, addXP } from './services/storage';
 import { checkAchievements, type AchievementUnlock } from './services/achievements';
+import { initCandleCache } from './services/candle-cache';
 import { useGame } from './context/GameContext';
 
 type Screen = 'home' | 'game' | 'results';
@@ -16,8 +17,14 @@ function AppContent() {
   const [newAchievements, setNewAchievements] = useState<AchievementUnlock[]>([]);
   const { state } = useGame();
 
-  // Check daily streak on app load
+  // Initialize app on load
   useEffect(() => {
+    // Initialize IndexedDB cache for candle data
+    initCandleCache()
+      .then(() => console.log('📊 Candle cache ready'))
+      .catch((err) => console.warn('Failed to init candle cache:', err));
+
+    // Check daily streak
     const { streak, isNewDay } = checkDailyStreak();
     if (isNewDay && streak > 1) {
       console.log(`🔥 Daily streak: ${streak} days!`);
