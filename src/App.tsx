@@ -15,7 +15,7 @@ type Screen = 'home' | 'game' | 'results';
 function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
   const [newAchievements, setNewAchievements] = useState<AchievementUnlock[]>([]);
-  const { state } = useGame();
+  const { state, dispatch } = useGame();
 
   // Initialize app on load
   useEffect(() => {
@@ -85,8 +85,10 @@ function AppContent() {
 
   const handlePlayAgain = useCallback(() => {
     setNewAchievements([]);
+    // Dispatch START_GAME to reset game state with same data
+    dispatch({ type: 'START_GAME' });
     setCurrentScreen('game');
-  }, []);
+  }, [dispatch]);
 
   const handleBackToHome = useCallback(() => {
     setNewAchievements([]);
