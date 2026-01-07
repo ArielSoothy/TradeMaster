@@ -6,29 +6,34 @@ import {
   getStocksByCategory,
   getRandomStock,
   fetchLowFloatRunners,
-  CATEGORY_INFO,
   type StockCategory,
   type StockInfo,
 } from '../../services/yahoo-finance';
 import { useGame } from '../../context/GameContext';
 import { loadProgress, getXPForCurrentLevel } from '../../services/storage';
 import { getLevelConfig, isFeatureUnlocked } from '../../services/scoring';
+import {
+  getGameMode,
+  setGameMode,
+  getCurrentMission,
+} from '../../services/career';
+import { CHAPTERS } from '../../data/missions';
+import type { GameMode } from '../../types/career';
 import { ProfileCard } from '../auth/ProfileCard';
 import {
-  MysteryModeButton,
+  CareerModeCard,
+  ModeSelector,
+  QuickPlayHeader,
   DailyChallenge,
-  QuickPlaySection,
   LeaderboardTeaser,
   LevelProgressBar,
+  QuickPlaySection,
 } from '../home';
 
 interface HomeScreenProps {
   onStartGame: () => void;
   onOpenLeaderboard?: () => void;
 }
-
-// Categories for quick access
-const QUICK_CATEGORIES: StockCategory[] = ['meme', 'crypto', 'tech', 'leveraged'];
 
 export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) {
   const { dispatch } = useGame();
@@ -39,6 +44,7 @@ export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) 
   const [gainersLoading, setGainersLoading] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [selectedCategory] = useState<StockCategory>('all');
+  const [currentGameMode, setCurrentGameMode] = useState<GameMode>('arcade');
 
   // Level and XP state
   const [levelInfo, setLevelInfo] = useState({
@@ -61,10 +67,12 @@ export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) 
       requiredXP: xpInfo.required,
       title: config.title,
     });
+
+    // Load saved game mode preference
+    setCurrentGameMode(getGameMode());
   }, []);
 
   // Feature unlocks based on level
-  const mysteryUnlocked = isFeatureUnlocked(levelInfo.level, 'mystery') || levelInfo.level >= 10;
   const leaderboardUnlocked = isFeatureUnlocked(levelInfo.level, 'leaderboard') || levelInfo.level >= 30;
   const dailyChallengeUnlocked = isFeatureUnlocked(levelInfo.level, 'daily_challenge') || levelInfo.level >= 50;
 
@@ -73,7 +81,7 @@ export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) 
     const loadGainers = async () => {
       setGainersLoading(true);
       try {
-        const gainers = await fetchLowFloatRunners({ limit: 8 });
+        const gainers = await fetchLowFloatRunners({ limit: 6 });
         setDailyGainers(gainers);
       } catch (err) {
         console.error('Failed to load gainers:', err);
@@ -100,7 +108,8 @@ export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) 
     [dailyGainers]
   );
 
-  const handleSelectStock = useCallback(async (symbol: string, mysteryMode = false) => {
+  // Start game with stock and mode
+  const handleSelectStock = useCallback(async (symbol: string, mode: GameMode = currentGameMode) => {
     setIsLoading(true);
     setError(null);
 
@@ -114,7 +123,18 @@ export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) 
         throw new Error(`Not enough data for ${symbol.toUpperCase()}.`);
       }
 
-      dispatch({ type: 'LOAD_DATA', payload: { symbol: symbol.toUpperCase(), data, mysteryMode } });
+      // Save mode preference
+      setGameMode(mode);
+      setCurrentGameMode(mode);
+
+      dispatch({
+        type: 'LOAD_DATA',
+        payload: {
+          symbol: symbol.toUpperCase(),
+          data,
+          mysteryMode: mode === 'arcade', // Arcade mode hides stock identity for more fun
+        },
+      });
       dispatch({ type: 'START_GAME' });
       onStartGame();
     } catch (err) {
@@ -122,20 +142,51 @@ export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) 
     } finally {
       setIsLoading(false);
     }
-  }, [dispatch, onStartGame]);
+  }, [dispatch, onStartGame, currentGameMode]);
 
-  // Mystery mode - random stock
-  const handleMysteryMode = useCallback(async () => {
-    const randomStock = getRandomStock('all');
-    await handleSelectStock(randomStock.symbol, true);
+  // Career mode - start with mission data
+  const handleStartCareer = useCallback(async () => {
+    const mission = getCurrentMission();
+    if (!mission) {
+      // Start first mission if no progress
+      const firstMission = CHAPTERS[0]?.missions[0];
+      if (firstMission) {
+        await handleSelectStock(firstMission.stockSymbol, 'career');
+      }
+      return;
+    }
+
+    // TODO: Load specific date range for mission
+    // For now, just load the stock
+    await handleSelectStock(mission.stockSymbol, 'career');
   }, [handleSelectStock]);
+
+  // Arcade mode - random exciting stock
+  const handleArcadeMode = useCallback(async () => {
+    const categories: StockCategory[] = ['meme', 'crypto', 'tech'];
+    const randomCategory = categories[Math.floor(Math.random() * categories.length)];
+    const randomStock = getRandomStock(randomCategory);
+    await handleSelectStock(randomStock.symbol, 'arcade');
+  }, [handleSelectStock]);
+
+  // Trader mode - let user pick or use a gainer
+  const handleTraderMode = useCallback(async () => {
+    // Default to a random today's mover for interesting volatility
+    if (dailyGainers.length > 0) {
+      const randomGainer = dailyGainers[Math.floor(Math.random() * dailyGainers.length)];
+      await handleSelectStock(randomGainer.symbol, 'trader');
+    } else {
+      // Fallback to SPY
+      await handleSelectStock('SPY', 'trader');
+    }
+  }, [dailyGainers, handleSelectStock]);
 
   // Random gainer
   const handleRandomGainer = useCallback(async () => {
     if (dailyGainers.length === 0) return;
     const randomGainer = dailyGainers[Math.floor(Math.random() * dailyGainers.length)];
-    await handleSelectStock(randomGainer.symbol, true);
-  }, [dailyGainers, handleSelectStock]);
+    await handleSelectStock(randomGainer.symbol, currentGameMode);
+  }, [dailyGainers, handleSelectStock, currentGameMode]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && searchQuery.trim()) {
@@ -166,35 +217,74 @@ export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) 
       <div className="flex-1 overflow-y-auto px-4 pb-24">
         {/* Logo */}
         <motion.div
-          className="text-center py-6"
+          className="text-center py-4"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <h1 className="text-4xl md:text-5xl font-black bg-gradient-to-r from-green-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
+          <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-green-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
             TradeMaster
           </h1>
+          <p className="text-gray-500 text-sm mt-1">Learn trading with real market data</p>
         </motion.div>
 
-        {/* Mystery Mode - Hero CTA */}
+        {/* Career Mode - Hero CTA */}
         <motion.div
-          className="mb-6"
+          className="mb-5"
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1 }}
         >
-          <MysteryModeButton
-            onClick={handleMysteryMode}
+          <CareerModeCard
+            onClick={handleStartCareer}
             disabled={isLoading}
-            unlocked={mysteryUnlocked}
+          />
+        </motion.div>
+
+        {/* Quick Play Section Header */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.15 }}
+        >
+          <QuickPlayHeader />
+        </motion.div>
+
+        {/* Mode Selector (Arcade / Trader) */}
+        <motion.div
+          className="mb-5"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <ModeSelector
+            onSelectArcade={handleArcadeMode}
+            onSelectTrader={handleTraderMode}
+            disabled={isLoading}
+          />
+        </motion.div>
+
+        {/* Today's Movers */}
+        <motion.div
+          className="mb-5"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+        >
+          <QuickPlaySection
+            title="Today's Movers"
+            icon="🚀"
+            stocks={gainersForQuickPlay}
+            onSelectStock={(symbol) => handleSelectStock(symbol)}
+            isLoading={gainersLoading}
           />
         </motion.div>
 
         {/* Daily Challenge */}
         <motion.div
-          className="mb-6"
+          className="mb-5"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
+          transition={{ delay: 0.3 }}
         >
           <DailyChallenge
             title="Daily Challenge"
@@ -208,28 +298,12 @@ export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) 
           />
         </motion.div>
 
-        {/* Today's Movers */}
-        <motion.div
-          className="mb-6"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          <QuickPlaySection
-            title="Today's Movers"
-            icon="🚀"
-            stocks={gainersForQuickPlay}
-            onSelectStock={(symbol) => handleSelectStock(symbol)}
-            isLoading={gainersLoading}
-          />
-        </motion.div>
-
         {/* Leaderboard Teaser */}
         <motion.div
-          className="mb-6"
+          className="mb-5"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25 }}
+          transition={{ delay: 0.35 }}
         >
           <LeaderboardTeaser
             topPlayer={{
@@ -242,38 +316,6 @@ export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) 
             unlocked={leaderboardUnlocked}
             onClick={onOpenLeaderboard}
           />
-        </motion.div>
-
-        {/* Category Quick Access */}
-        <motion.div
-          className="mb-6"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">Quick Play</h3>
-          <div className="grid grid-cols-2 gap-3">
-            {QUICK_CATEGORIES.map((cat) => {
-              const info = CATEGORY_INFO[cat];
-              return (
-                <motion.button
-                  key={cat}
-                  onClick={async () => {
-                    const randomStock = getRandomStock(cat);
-                    await handleSelectStock(randomStock.symbol, true);
-                  }}
-                  disabled={isLoading}
-                  className="glass-card p-4 text-left hover:bg-white/10 transition-colors disabled:opacity-50"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <span className="text-2xl mb-1 block">{info.emoji}</span>
-                  <span className="font-bold text-white">{info.label}</span>
-                  <p className="text-xs text-gray-500 mt-0.5">Random {info.label.toLowerCase()}</p>
-                </motion.button>
-              );
-            })}
-          </div>
         </motion.div>
 
         {/* Error Message */}

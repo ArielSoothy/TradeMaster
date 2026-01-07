@@ -10,8 +10,10 @@ const initialState: GameState = {
   symbol: '',
   allCandleData: [],
   currentCandleIndex: 0,
+  gameMode: 'arcade',
   mysteryMode: false,
   basePrice: 0,
+  missionId: undefined,
   balance: STARTING_BALANCE,
   startingBalance: STARTING_BALANCE,
   position: null,
@@ -42,12 +44,21 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...initialState,
         symbol: action.payload.symbol,
         allCandleData: action.payload.data,
+        gameMode: action.payload.gameMode ?? state.gameMode,
         mysteryMode: action.payload.mysteryMode ?? false,
+        missionId: action.payload.missionId,
         basePrice: firstCandle?.open ?? 0, // Use first candle open as base for % calc
         gameStatus: 'idle',
         // Preserve XP and level from previous sessions
         xp: state.xp,
         level: state.level,
+      };
+    }
+
+    case 'SET_GAME_MODE': {
+      return {
+        ...state,
+        gameMode: action.payload,
       };
     }
 
@@ -320,6 +331,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...initialState,
         xp: state.xp,
         level: state.level,
+        gameMode: state.gameMode,
       };
     }
 

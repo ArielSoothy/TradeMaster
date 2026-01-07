@@ -1,4 +1,8 @@
 import type { UTCTimestamp } from 'lightweight-charts';
+import type { GameMode } from './career';
+
+// Re-export GameMode for convenience
+export type { GameMode } from './career';
 
 // Candlestick data for charts
 export interface CandleData {
@@ -47,9 +51,15 @@ export interface GameState {
   allCandleData: CandleData[];
   currentCandleIndex: number;
 
+  // Game mode
+  gameMode: GameMode;
+
   // Mystery mode - hides stock identity
   mysteryMode: boolean;
   basePrice: number; // Starting price for % calculation
+
+  // Career mode specific
+  missionId?: string;
 
   // Trading
   balance: number;
@@ -81,8 +91,9 @@ export interface GameState {
 
 // Game actions
 export type GameAction =
-  | { type: 'LOAD_DATA'; payload: { symbol: string; data: CandleData[]; mysteryMode?: boolean } }
+  | { type: 'LOAD_DATA'; payload: { symbol: string; data: CandleData[]; mysteryMode?: boolean; gameMode?: GameMode; missionId?: string } }
   | { type: 'START_GAME'; payload?: { startIndex?: number } }
+  | { type: 'SET_GAME_MODE'; payload: GameMode }
   | { type: 'TICK' }
   | { type: 'BUY' }
   | { type: 'SELL' }
