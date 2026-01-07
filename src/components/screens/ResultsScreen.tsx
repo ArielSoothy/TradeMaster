@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGame } from '../../context/GameContext';
+import { useAuth } from '../../context/AuthContext';
 import { calculateSessionResult, getGradeColor, getLevelConfig } from '../../services/scoring';
 import { formatCurrency, formatPercent } from '../../utils/format';
 import { CountUpNumber } from '../ui/AnimatedNumber';
@@ -8,6 +9,7 @@ import { ConfettiBurst } from '../effects/ParticleSystem';
 import { useSound } from '../../hooks/useSound';
 import { type AchievementUnlock, getRarityColor, getRarityLabel } from '../../services/achievements';
 import { loadProgress, getXPForCurrentLevel } from '../../services/storage';
+import { ShareCard, type ShareCardData } from '../social/ShareCard';
 
 interface ResultsScreenProps {
   onPlayAgain: () => void;
@@ -22,13 +24,24 @@ export function ResultsScreen({
 }: ResultsScreenProps) {
   const { state } = useGame();
   const { playSound } = useSound();
+  const { profile } = useAuth();
 
   const result = useMemo(() => calculateSessionResult(state), [state]);
   const levelConfig = useMemo(() => getLevelConfig(result.newLevel), [result.newLevel]);
 
+  // Calculate beat market delta
+  const beatMarketDelta = useMemo(() => {
+    if (state.allCandleData.length === 0) return 0;
+    const startPrice = state.allCandleData[0]?.close || state.basePrice;
+    const endPrice = state.allCandleData[state.currentCandleIndex]?.close || startPrice;
+    const baseline = ((endPrice - startPrice) / startPrice) * 100;
+    return result.pnlPercent - baseline;
+  }, [state, result.pnlPercent]);
+
   // Confetti trigger
   const [showConfetti, setShowConfetti] = useState(false);
   const [showAchievementModal, setShowAchievementModal] = useState(false);
+  const [showShareCard, setShowShareCard] = useState(false);
 
   // Trigger celebration for good results
   useEffect(() => {
@@ -418,19 +431,50 @@ export function ResultsScreen({
             </motion.button>
           </div>
 
-          {/* Share Button */}
-          <motion.button
-            onClick={handleShare}
-            className="w-full py-3 rounded-xl bg-green-500/20 text-green-400 font-semibold
-                       hover:bg-green-500/30 transition-colors flex items-center justify-center gap-2"
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <span>📤</span>
-            Share Results
-          </motion.button>
+          {/* Share Buttons */}
+          <div className="flex gap-3">
+            <motion.button
+              onClick={handleShare}
+              className="flex-1 py-3 rounded-xl bg-white/10 text-white font-semibold
+                         hover:bg-white/20 transition-colors flex items-center justify-center gap-2"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <span>📤</span>
+              Share Text
+            </motion.button>
+            <motion.button
+              onClick={() => setShowShareCard(true)}
+              className="flex-1 py-3 rounded-xl bg-gradient-to-r from-[#1DA1F2] to-[#0077B5]
+                         text-white font-semibold shadow-lg
+                         hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <span>🖼️</span>
+              Share Image
+            </motion.button>
+          </div>
         </motion.div>
       </motion.div>
+
+      {/* Share Card Modal */}
+      <AnimatePresence>
+        {showShareCard && (
+          <ShareCard
+            data={{
+              username: profile?.username || 'Trader',
+              symbol: state.mysteryMode ? 'MYSTERY' : state.symbol,
+              pnlPercent: result.pnlPercent,
+              pnlAmount: result.totalPnL,
+              beatMarketDelta: beatMarketDelta,
+              grade: result.grade,
+              streak: result.maxStreak,
+            }}
+            onClose={() => setShowShareCard(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Achievement Modal */}
       <AnimatePresence>

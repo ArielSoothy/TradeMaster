@@ -1,21 +1,25 @@
 import { useState, useCallback, useEffect } from 'react';
 import { GameProvider } from './context/GameContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { HomeScreen } from './components/screens/HomeScreen';
 import { GameScreen } from './components/screens/GameScreen';
 import { ResultsScreen } from './components/screens/ResultsScreen';
+import { LeaderboardScreen } from './components/screens/LeaderboardScreen';
 import { ScreenShakeProvider } from './components/effects/ScreenShake';
 import { ParticleProvider } from './components/effects/ParticleSystem';
 import { checkDailyStreak, loadProgress, recordSession, addXP } from './services/storage';
+import { submitSession, calculateBaselineMove, syncAchievement } from './services/sync';
 import { checkAchievements, type AchievementUnlock } from './services/achievements';
 import { initCandleCache } from './services/candle-cache';
 import { useGame } from './context/GameContext';
 
-type Screen = 'home' | 'game' | 'results';
+type Screen = 'home' | 'game' | 'results' | 'leaderboard';
 
 function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
   const [newAchievements, setNewAchievements] = useState<AchievementUnlock[]>([]);
   const { state, dispatch } = useGame();
+  const { user, isAnonymous, refreshProfile } = useAuth();
 
   // Initialize app on load
   useEffect(() => {
@@ -35,11 +39,12 @@ function AppContent() {
     setCurrentScreen('game');
   }, []);
 
-  const handleGameEnd = useCallback(() => {
+  const handleGameEnd = useCallback(async () => {
     // Record session to localStorage
     const totalPnL = state.balance - state.startingBalance;
     const totalTrades = state.winCount + state.lossCount;
     const winRate = totalTrades > 0 ? (state.winCount / totalTrades) * 100 : 0;
+    const grade = getGrade(totalPnL, winRate, state.maxStreak);
 
     if (totalTrades > 0) {
       recordSession({
@@ -48,7 +53,7 @@ function AppContent() {
         trades: totalTrades,
         winRate,
         maxStreak: state.maxStreak,
-        grade: getGrade(totalPnL, winRate, state.maxStreak),
+        grade,
         xpEarned: state.sessionXP || 0,
         duration: 0, // Would need to track session time
       });
@@ -56,6 +61,38 @@ function AppContent() {
       // Add session XP
       if (state.sessionXP) {
         addXP(state.sessionXP);
+      }
+
+      // Submit session to cloud if user is authenticated
+      if (user && !isAnonymous) {
+        // Calculate stock baseline move (buy & hold return)
+        const startPrice = state.allCandleData[0]?.close || state.basePrice;
+        const endPrice = state.allCandleData[state.currentCandleIndex]?.close || startPrice;
+        const baselineMove = calculateBaselineMove(startPrice, endPrice);
+        const pnlPercent = (totalPnL / state.startingBalance) * 100;
+        const beatMarketDelta = pnlPercent - baselineMove;
+
+        await submitSession(user.id, {
+          symbol: state.mysteryMode ? 'MYSTERY' : state.symbol,
+          starting_balance: state.startingBalance,
+          final_balance: state.balance,
+          total_trades: totalTrades,
+          wins: state.winCount,
+          losses: state.lossCount,
+          max_streak: state.maxStreak,
+          max_drawdown: state.maxDrawdown,
+          grade: grade as 'S' | 'A' | 'B' | 'C' | 'D' | 'F',
+          xp_earned: state.sessionXP || 0,
+          pnl_percent: pnlPercent,
+          stock_baseline_move: baselineMove,
+          beat_market_delta: beatMarketDelta,
+          mystery_mode: state.mysteryMode,
+          leverage_used: state.leverage,
+          duration_seconds: 0, // Would need to track session time
+        });
+
+        // Refresh profile to get updated stats
+        await refreshProfile();
       }
 
       // Check for new achievements
@@ -77,11 +114,18 @@ function AppContent() {
 
       if (unlocked.length > 0) {
         setNewAchievements(unlocked);
+
+        // Sync new achievements to cloud
+        if (user && !isAnonymous) {
+          for (const unlock of unlocked) {
+            await syncAchievement(user.id, unlock.achievement.id);
+          }
+        }
       }
     }
 
     setCurrentScreen('results');
-  }, [state]);
+  }, [state, user, isAnonymous, refreshProfile]);
 
   const handlePlayAgain = useCallback(() => {
     setNewAchievements([]);
@@ -95,9 +139,15 @@ function AppContent() {
     setCurrentScreen('home');
   }, []);
 
+  const handleOpenLeaderboard = useCallback(() => {
+    setCurrentScreen('leaderboard');
+  }, []);
+
   switch (currentScreen) {
     case 'home':
-      return <HomeScreen onStartGame={handleStartGame} />;
+      return <HomeScreen onStartGame={handleStartGame} onOpenLeaderboard={handleOpenLeaderboard} />;
+    case 'leaderboard':
+      return <LeaderboardScreen onBack={handleBackToHome} />;
     case 'game':
       return (
         <GameScreen
@@ -159,13 +209,15 @@ function getGrade(pnl: number, winRate: number, maxStreak: number): string {
 
 function App() {
   return (
-    <GameProvider>
-      <ScreenShakeProvider>
-        <ParticleProvider maxParticles={100}>
-          <AppContent />
-        </ParticleProvider>
-      </ScreenShakeProvider>
-    </GameProvider>
+    <AuthProvider>
+      <GameProvider>
+        <ScreenShakeProvider>
+          <ParticleProvider maxParticles={100}>
+            <AppContent />
+          </ParticleProvider>
+        </ScreenShakeProvider>
+      </GameProvider>
+    </AuthProvider>
   );
 }
 

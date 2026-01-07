@@ -15,9 +15,11 @@ import {
   type VolatilityLevel,
 } from '../../services/yahoo-finance';
 import { useGame } from '../../context/GameContext';
+import { ProfileCard } from '../auth/ProfileCard';
 
 interface HomeScreenProps {
   onStartGame: () => void;
+  onOpenLeaderboard?: () => void;
 }
 
 const TIME_RANGES: { value: TimeRange; label: string; description: string }[] = [
@@ -38,7 +40,7 @@ const CATEGORIES: StockCategory[] = ['all', 'meme', 'crypto', 'tech', 'leveraged
 // Volatility levels for filter
 const VOLATILITY_LEVELS: VolatilityLevel[] = ['extreme', 'high', 'medium', 'low'];
 
-export function HomeScreen({ onStartGame }: HomeScreenProps) {
+export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) {
   const { dispatch } = useGame();
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -131,7 +133,12 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative">
+      {/* Profile Card - Top Right */}
+      <div className="absolute top-4 right-4 z-40">
+        <ProfileCard />
+      </div>
+
       {/* Logo & Title */}
       <motion.div
         className="text-center mb-8"
@@ -391,6 +398,21 @@ export function HomeScreen({ onStartGame }: HomeScreenProps) {
             >
               <span className="text-lg">📈</span>
               <span>Today's Gainer</span>
+            </button>
+          )}
+
+          {/* Leaderboard Button */}
+          {onOpenLeaderboard && (
+            <button
+              onClick={onOpenLeaderboard}
+              className="px-5 py-3 rounded-xl font-bold text-white
+                         bg-gradient-to-r from-amber-500 via-yellow-500 to-orange-500
+                         hover:from-amber-600 hover:via-yellow-600 hover:to-orange-600
+                         shadow-lg shadow-amber-500/25 transition-all
+                         flex items-center gap-2"
+            >
+              <span className="text-lg">🏆</span>
+              <span>Leaderboard</span>
             </button>
           )}
         </div>
