@@ -8,7 +8,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { LoginModal } from './LoginModal';
 
-export function ProfileCard() {
+interface ProfileCardProps {
+  compact?: boolean;
+}
+
+export function ProfileCard({ compact = false }: ProfileCardProps) {
   const { user, profile, isLoading, isAnonymous, signOut } = useAuth();
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -19,17 +23,18 @@ export function ProfileCard() {
       <>
         <motion.button
           onClick={() => setShowLoginModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-500
+          className={`flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-500
                      text-white font-medium rounded-xl hover:from-indigo-600 hover:to-purple-600
-                     transition-all shadow-lg shadow-indigo-500/25"
+                     transition-all shadow-lg shadow-indigo-500/25
+                     ${compact ? 'px-3 py-1.5 text-sm' : 'px-4 py-2'}`}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={compact ? 'w-4 h-4' : 'w-5 h-5'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
           </svg>
-          Sign In
+          {!compact && 'Sign In'}
         </motion.button>
 
         <LoginModal
@@ -43,9 +48,9 @@ export function ProfileCard() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-xl">
-        <div className="w-8 h-8 rounded-full bg-white/10 animate-pulse" />
-        <div className="w-20 h-4 bg-white/10 rounded animate-pulse" />
+      <div className={`flex items-center gap-2 bg-white/5 rounded-xl ${compact ? 'px-2 py-1.5' : 'px-4 py-2'}`}>
+        <div className={`${compact ? 'w-6 h-6' : 'w-8 h-8'} rounded-full bg-white/10 animate-pulse`} />
+        {!compact && <div className="w-20 h-4 bg-white/10 rounded animate-pulse" />}
       </div>
     );
   }
@@ -55,14 +60,15 @@ export function ProfileCard() {
     <div className="relative">
       <motion.button
         onClick={() => setShowDropdown(!showDropdown)}
-        className="flex items-center gap-3 px-3 py-2 bg-white/5 border border-white/10
-                   rounded-xl hover:bg-white/10 transition-colors"
+        className={`flex items-center bg-white/5 border border-white/10
+                   rounded-xl hover:bg-white/10 transition-colors
+                   ${compact ? 'gap-2 px-2 py-1.5' : 'gap-3 px-3 py-2'}`}
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
       >
         {/* Avatar */}
-        <div className="w-8 h-8 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500
-                        flex items-center justify-center text-white font-bold text-sm overflow-hidden">
+        <div className={`${compact ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm'} rounded-full bg-gradient-to-r from-indigo-500 to-purple-500
+                        flex items-center justify-center text-white font-bold overflow-hidden`}>
           {profile?.avatar_url ? (
             <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
           ) : (
@@ -70,19 +76,21 @@ export function ProfileCard() {
           )}
         </div>
 
-        {/* Name & Level */}
-        <div className="text-left hidden sm:block">
-          <div className="text-sm font-medium text-white truncate max-w-[100px]">
-            {profile?.display_name || profile?.username || user.email?.split('@')[0]}
+        {/* Name & Level - hidden in compact mode */}
+        {!compact && (
+          <div className="text-left hidden sm:block">
+            <div className="text-sm font-medium text-white truncate max-w-[100px]">
+              {profile?.display_name || profile?.username || user.email?.split('@')[0]}
+            </div>
+            <div className="text-xs text-gray-400">
+              Lv.{profile?.level || 1} • {formatNumber(profile?.xp || 0)} XP
+            </div>
           </div>
-          <div className="text-xs text-gray-400">
-            Lv.{profile?.level || 1} • {formatNumber(profile?.xp || 0)} XP
-          </div>
-        </div>
+        )}
 
         {/* Dropdown Arrow */}
         <svg
-          className={`w-4 h-4 text-gray-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`}
+          className={`${compact ? 'w-3 h-3' : 'w-4 h-4'} text-gray-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`}
           fill="none" stroke="currentColor" viewBox="0 0 24 24"
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

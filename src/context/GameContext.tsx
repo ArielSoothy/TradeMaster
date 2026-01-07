@@ -205,6 +205,55 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return closePosition(state, currentCandle.close, currentCandle.time);
     }
 
+    case 'SELL_HALF': {
+      if (!state.position || state.gameStatus !== 'playing') return state;
+
+      const currentCandle = state.allCandleData[state.currentCandleIndex];
+      const exitPrice = currentCandle.close;
+
+      // Calculate PnL for half the position
+      const halfQuantity = state.position.quantity / 2;
+      const halfPosition = { ...state.position, quantity: halfQuantity };
+      const { pnl, pnlPercent } = calculatePnL(halfPosition, exitPrice);
+
+      // Record the partial trade
+      const closedTrade: CompletedTrade = {
+        id: generateTradeId(),
+        type: state.position.type,
+        entryPrice: state.position.entryPrice,
+        exitPrice,
+        quantity: halfQuantity,
+        leverage: state.position.leverage,
+        pnl,
+        pnlPercent,
+        entryTime: state.position.entryTime,
+        exitTime: currentCandle.time as any,
+      };
+
+      const isWin = pnl > 0;
+      const newStreak = isWin ? state.currentStreak + 1 : 0;
+      const xpEarned = calculateTradeXP(closedTrade, newStreak);
+      const newTotalXP = state.xp + xpEarned;
+
+      return {
+        ...state,
+        position: {
+          ...state.position,
+          quantity: halfQuantity, // Keep half the position open
+        },
+        balance: state.balance + pnl,
+        trades: [...state.trades, closedTrade],
+        totalPnL: state.totalPnL + pnl,
+        winCount: isWin ? state.winCount + 1 : state.winCount,
+        lossCount: isWin ? state.lossCount : state.lossCount + 1,
+        currentStreak: newStreak,
+        maxStreak: Math.max(state.maxStreak, newStreak),
+        xp: newTotalXP,
+        sessionXP: state.sessionXP + xpEarned,
+        level: getLevelForXP(newTotalXP),
+      };
+    }
+
     case 'SET_LEVERAGE': {
       // Can only change leverage when not in a position
       if (state.position) return state;

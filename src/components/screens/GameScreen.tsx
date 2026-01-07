@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TradingChart, type ChartMode } from '../game/TradingChart';
-import { TradeButtons } from '../game/TradeButtons';
-import { LeverageSelector } from '../game/LeverageSelector';
+import { IntegratedTradePanel } from '../game/IntegratedTradePanel';
 import { SpeedSelector } from '../game/SpeedSelector';
+import { getAvailableLeverages } from '../../services/scoring';
+import type { LeverageOption } from '../../types/game';
 import { PortfolioHUD, PortfolioHUDCompact } from '../hud/PortfolioHUD';
 import { ProfitBurst } from '../effects/ProfitBurst';
 import { StreakAnnouncement } from '../effects/StreakFlame';
@@ -37,6 +38,8 @@ export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
     state,
     buy,
     sell,
+    sellHalf,
+    closePosition,
     togglePlay,
     setSpeed,
     setLeverage,
@@ -154,6 +157,37 @@ export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
     impact();
     sell();
   }, [sell, playSound, impact]);
+
+  // Handle integrated trade (sets leverage, then executes buy/sell)
+  const handleTrade = useCallback((type: 'long' | 'short', leverage: LeverageOption) => {
+    // Set leverage first (only works when no position)
+    setLeverage(leverage);
+    // Then execute trade
+    if (type === 'long') {
+      handleBuy();
+    } else {
+      handleSell();
+    }
+  }, [setLeverage, handleBuy, handleSell]);
+
+  // Handle sell half with sound
+  const handleSellHalf = useCallback(() => {
+    playSound('sell');
+    impact();
+    sellHalf();
+  }, [sellHalf, playSound, impact]);
+
+  // Handle close all with sound
+  const handleCloseAll = useCallback(() => {
+    playSound('sell');
+    impact();
+    closePosition();
+  }, [closePosition, playSound, impact]);
+
+  // Get available leverages based on level
+  const availableLeverages = useMemo(() => {
+    return getAvailableLeverages(levelInfo.level) as LeverageOption[];
+  }, [levelInfo.level]);
 
   // Keyboard controls
   useKeyboardControls({
@@ -356,23 +390,16 @@ export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
               xpToNextLevel={levelInfo.required}
             />
 
-            {/* Leverage */}
+            {/* Integrated Trade Panel */}
             <div className="glass-card p-4">
-              <LeverageSelector
-                value={state.leverage}
-                onChange={setLeverage}
-                disabled={state.position !== null}
-              />
-            </div>
-
-            {/* Trade Buttons */}
-            <div className="glass-card p-4">
-              <TradeButtons
-                onBuy={handleBuy}
-                onSell={handleSell}
+              <IntegratedTradePanel
+                onTrade={handleTrade}
+                onSellHalf={handleSellHalf}
+                onCloseAll={handleCloseAll}
                 hasPosition={state.position !== null}
                 positionType={state.position?.type ?? null}
                 disabled={state.gameStatus !== 'playing'}
+                availableLeverages={availableLeverages}
               />
             </div>
 
@@ -392,38 +419,31 @@ export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
         {/* Mobile: Bottom Controls */}
         {isMobile && (
           <div className="mt-3 space-y-3">
-            {/* Leverage Row */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 glass-card px-3 py-2">
-                <LeverageSelector
-                  value={state.leverage}
-                  onChange={setLeverage}
-                  disabled={state.position !== null}
-                />
+            {/* Integrated Trade Panel */}
+            <div className="glass-card p-3">
+              <IntegratedTradePanel
+                onTrade={handleTrade}
+                onSellHalf={handleSellHalf}
+                onCloseAll={handleCloseAll}
+                hasPosition={state.position !== null}
+                positionType={state.position?.type ?? null}
+                disabled={state.gameStatus !== 'playing'}
+                availableLeverages={availableLeverages}
+              />
+            </div>
+
+            {/* End Session + Swipe hint */}
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-gray-500">
+                Swipe ↑ BUY • Swipe ↓ SELL
               </div>
               <motion.button
                 onClick={endGame}
                 className="px-4 py-2 rounded-lg bg-white/10 text-gray-400 text-sm"
                 whileTap={{ scale: 0.95 }}
               >
-                End
+                End Session
               </motion.button>
-            </div>
-
-            {/* Trade Buttons - Larger for mobile */}
-            <div className="glass-card p-3">
-              <TradeButtons
-                onBuy={handleBuy}
-                onSell={handleSell}
-                hasPosition={state.position !== null}
-                positionType={state.position?.type ?? null}
-                disabled={state.gameStatus !== 'playing'}
-              />
-            </div>
-
-            {/* Swipe hint */}
-            <div className="text-center text-xs text-gray-500">
-              Swipe ↑ to BUY • Swipe ↓ to SELL
             </div>
           </div>
         )}

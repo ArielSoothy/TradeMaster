@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   searchStocks,
   fetchStockDataWithCache,
@@ -7,57 +7,73 @@ import {
   getRandomStock,
   fetchLowFloatRunners,
   CATEGORY_INFO,
-  VOLATILITY_INFO,
-  type TimeRange,
-  type Interval,
   type StockCategory,
   type StockInfo,
-  type VolatilityLevel,
 } from '../../services/yahoo-finance';
 import { useGame } from '../../context/GameContext';
+import { loadProgress, getXPForCurrentLevel } from '../../services/storage';
+import { getLevelConfig, isFeatureUnlocked } from '../../services/scoring';
 import { ProfileCard } from '../auth/ProfileCard';
+import {
+  MysteryModeButton,
+  DailyChallenge,
+  QuickPlaySection,
+  LeaderboardTeaser,
+  LevelProgressBar,
+} from '../home';
 
 interface HomeScreenProps {
   onStartGame: () => void;
   onOpenLeaderboard?: () => void;
 }
 
-const TIME_RANGES: { value: TimeRange; label: string; description: string }[] = [
-  { value: '1d', label: '1 Day', description: '~78 candles' },
-  { value: '5d', label: '5 Days', description: '~390 candles' },
-  { value: '1mo', label: '1 Month', description: '~1500 candles' },
-];
-
-const INTERVALS: { value: Interval; label: string }[] = [
-  { value: '1m', label: '1min' },
-  { value: '5m', label: '5min' },
-  { value: '15m', label: '15min' },
-];
-
-// Category tabs order
-const CATEGORIES: StockCategory[] = ['all', 'meme', 'crypto', 'tech', 'leveraged', 'bluechip'];
-
-// Volatility levels for filter
-const VOLATILITY_LEVELS: VolatilityLevel[] = ['extreme', 'high', 'medium', 'low'];
+// Categories for quick access
+const QUICK_CATEGORIES: StockCategory[] = ['meme', 'crypto', 'tech', 'leveraged'];
 
 export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) {
   const { dispatch } = useGame();
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedRange, setSelectedRange] = useState<TimeRange>('5d');
-  const [selectedInterval, setSelectedInterval] = useState<Interval>('1m'); // Default to 1-minute
-  const [selectedCategory, setSelectedCategory] = useState<StockCategory>('all');
-  const [selectedVolatility, setSelectedVolatility] = useState<VolatilityLevel | 'all'>('all');
   const [dailyGainers, setDailyGainers] = useState<StockInfo[]>([]);
   const [gainersLoading, setGainersLoading] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [selectedCategory] = useState<StockCategory>('all');
 
-  // Fetch small cap gainers on mount (volatile small caps with big moves)
+  // Level and XP state
+  const [levelInfo, setLevelInfo] = useState({
+    level: 1,
+    xp: 0,
+    currentXP: 0,
+    requiredXP: 500,
+    title: 'Rookie Trader',
+  });
+
+  // Load progress on mount
+  useEffect(() => {
+    const progress = loadProgress();
+    const xpInfo = getXPForCurrentLevel();
+    const config = getLevelConfig(progress.level);
+    setLevelInfo({
+      level: progress.level,
+      xp: progress.xp,
+      currentXP: xpInfo.current,
+      requiredXP: xpInfo.required,
+      title: config.title,
+    });
+  }, []);
+
+  // Feature unlocks based on level
+  const mysteryUnlocked = isFeatureUnlocked(levelInfo.level, 'mystery') || levelInfo.level >= 10;
+  const leaderboardUnlocked = isFeatureUnlocked(levelInfo.level, 'leaderboard') || levelInfo.level >= 30;
+  const dailyChallengeUnlocked = isFeatureUnlocked(levelInfo.level, 'daily_challenge') || levelInfo.level >= 50;
+
+  // Fetch small cap gainers on mount
   useEffect(() => {
     const loadGainers = async () => {
       setGainersLoading(true);
       try {
-        const gainers = await fetchLowFloatRunners({ limit: 5 });
+        const gainers = await fetchLowFloatRunners({ limit: 8 });
         setDailyGainers(gainers);
       } catch (err) {
         console.error('Failed to load gainers:', err);
@@ -68,479 +84,340 @@ export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) 
     loadGainers();
   }, []);
 
-  // Filter stocks by category and volatility
+  // Filter stocks by search
   const filteredStocks = useMemo(() => {
-    let stocks = searchQuery
-      ? searchStocks(searchQuery, selectedCategory)
-      : getStocksByCategory(selectedCategory);
+    if (!searchQuery) return getStocksByCategory(selectedCategory);
+    return searchStocks(searchQuery, selectedCategory);
+  }, [searchQuery, selectedCategory]);
 
-    // Apply volatility filter
-    if (selectedVolatility !== 'all') {
-      stocks = stocks.filter(s => s.volatility === selectedVolatility);
-    }
-
-    return stocks;
-  }, [searchQuery, selectedCategory, selectedVolatility]);
-
-  // Auto-adjust range when 1m interval is selected (max 7 days for 1m data)
-  useEffect(() => {
-    if (selectedInterval === '1m' && !['1d', '5d'].includes(selectedRange)) {
-      setSelectedRange('5d');
-    }
-  }, [selectedInterval, selectedRange]);
-
-  // Check if search query looks like a custom ticker
-  const isCustomTicker = searchQuery.length >= 1 &&
-    searchQuery.length <= 5 &&
-    /^[A-Za-z]+$/.test(searchQuery) &&
-    filteredStocks.length === 0;
+  // Convert to QuickPlaySection format
+  const gainersForQuickPlay = useMemo(() =>
+    dailyGainers.map(stock => ({
+      symbol: stock.symbol,
+      name: stock.name,
+      changePercent: stock.changePercent ?? 0,
+    })),
+    [dailyGainers]
+  );
 
   const handleSelectStock = useCallback(async (symbol: string, mysteryMode = false) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      // Use cache-aware fetch for 1m data (builds local history over time)
       const data = await fetchStockDataWithCache({
         symbol: symbol.toUpperCase(),
-        interval: selectedInterval
+        interval: '1m',
       });
 
       if (data.length < 50) {
-        throw new Error(`Not enough data for ${symbol.toUpperCase()}. Try a different range or stock.`);
+        throw new Error(`Not enough data for ${symbol.toUpperCase()}.`);
       }
 
       dispatch({ type: 'LOAD_DATA', payload: { symbol: symbol.toUpperCase(), data, mysteryMode } });
       dispatch({ type: 'START_GAME' });
       onStartGame();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load stock data. Check the ticker symbol.');
+      setError(err instanceof Error ? err.message : 'Failed to load stock data.');
     } finally {
       setIsLoading(false);
     }
-  }, [dispatch, onStartGame, selectedInterval]);
+  }, [dispatch, onStartGame]);
 
-  // Handle mystery mode - random stock from category
-  const handleMysteryMode = useCallback(async (category: StockCategory) => {
-    const randomStock = getRandomStock(category);
+  // Mystery mode - random stock
+  const handleMysteryMode = useCallback(async () => {
+    const randomStock = getRandomStock('all');
     await handleSelectStock(randomStock.symbol, true);
   }, [handleSelectStock]);
+
+  // Random gainer
+  const handleRandomGainer = useCallback(async () => {
+    if (dailyGainers.length === 0) return;
+    const randomGainer = dailyGainers[Math.floor(Math.random() * dailyGainers.length)];
+    await handleSelectStock(randomGainer.symbol, true);
+  }, [dailyGainers, handleSelectStock]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && searchQuery.trim()) {
       handleSelectStock(searchQuery.trim());
     }
+    if (e.key === 'Escape') {
+      setShowSearch(false);
+      setSearchQuery('');
+    }
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative">
-      {/* Profile Card - Top Right */}
-      <div className="absolute top-4 right-4 z-40">
-        <ProfileCard />
+    <div className="min-h-screen flex flex-col bg-[#0f0f0f] safe-area-pb">
+      {/* Top Bar */}
+      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+        <LevelProgressBar
+          level={levelInfo.level}
+          currentXP={levelInfo.currentXP}
+          requiredXP={levelInfo.requiredXP}
+          title={levelInfo.title}
+        />
+        <div className="ml-3">
+          <ProfileCard compact />
+        </div>
       </div>
 
-      {/* Logo & Title */}
-      <motion.div
-        className="text-center mb-8"
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <h1 className="text-5xl md:text-7xl font-black mb-2 bg-gradient-to-r from-green-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
-          TradeMaster
-        </h1>
-        <p className="text-gray-400 text-lg">
-          Master the art of day trading with real historical data
-        </p>
-      </motion.div>
-
-      {/* Search Box + Custom Symbol */}
-      <motion.div
-        className="w-full max-w-md mb-4"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-      >
-        <div className="relative">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value.toUpperCase())}
-            onKeyDown={handleKeyDown}
-            placeholder="Enter any ticker (AAPL, TSLA, BTC-USD...)"
-            className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-2xl
-                       text-white placeholder-gray-500 text-lg uppercase
-                       focus:outline-none focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/20
-                       transition-all"
-          />
-          {searchQuery && (
-            <motion.button
-              onClick={() => handleSelectStock(searchQuery)}
-              disabled={isLoading}
-              className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2
-                         bg-indigo-500 hover:bg-indigo-400 rounded-xl text-white font-medium
-                         disabled:opacity-50 transition-colors"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              Go
-            </motion.button>
-          )}
-        </div>
-        <p className="text-xs text-gray-500 mt-2 text-center">
-          Press Enter or click Go to load any Yahoo Finance ticker
-        </p>
-      </motion.div>
-
-      {/* Time Range & Interval Selectors */}
-      <motion.div
-        className="flex flex-wrap gap-4 mb-6 justify-center"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15 }}
-      >
-        {/* Time Range */}
-        <div className="glass-card p-3">
-          <div className="text-xs text-gray-400 mb-2">Time Range</div>
-          <div className="flex gap-1">
-            {TIME_RANGES.map((range) => (
-              <button
-                key={range.value}
-                onClick={() => setSelectedRange(range.value)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all
-                  ${selectedRange === range.value
-                    ? 'bg-indigo-500 text-white'
-                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
-                  }`}
-              >
-                {range.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Interval */}
-        <div className="glass-card p-3">
-          <div className="text-xs text-gray-400 mb-2">Candle Interval</div>
-          <div className="flex gap-1">
-            {INTERVALS.map((interval) => (
-              <button
-                key={interval.value}
-                onClick={() => setSelectedInterval(interval.value)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all
-                  ${selectedInterval === interval.value
-                    ? 'bg-indigo-500 text-white'
-                    : 'bg-white/10 text-gray-300 hover:bg-white/20'
-                  }`}
-              >
-                {interval.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Error Message */}
-      {error && (
+      {/* Main Content - Scrollable */}
+      <div className="flex-1 overflow-y-auto px-4 pb-24">
+        {/* Logo */}
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="mb-4 px-4 py-2 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400 max-w-md text-center"
+          className="text-center py-6"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
         >
-          {error}
+          <h1 className="text-4xl md:text-5xl font-black bg-gradient-to-r from-green-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
+            TradeMaster
+          </h1>
         </motion.div>
-      )}
 
-      {/* Loading State */}
-      {isLoading && (
+        {/* Mystery Mode - Hero CTA */}
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="mb-6 flex items-center gap-3 text-gray-400"
-        >
-          <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          Loading {searchQuery || 'stock'} data...
-        </motion.div>
-      )}
-
-      {/* Custom Ticker Prompt */}
-      {isCustomTicker && !isLoading && (
-        <motion.div
+          className="mb-6"
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="mb-6"
+          transition={{ delay: 0.1 }}
         >
-          <button
-            onClick={() => handleSelectStock(searchQuery)}
-            className="glass-card p-4 hover:bg-white/10 transition-colors flex items-center gap-3"
-          >
-            <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex items-center justify-center">
-              <span className="text-indigo-400 font-bold">{searchQuery.charAt(0)}</span>
-            </div>
-            <div className="text-left">
-              <div className="font-bold text-lg">{searchQuery}</div>
-              <div className="text-xs text-gray-400">Load custom ticker from Yahoo Finance</div>
-            </div>
-            <svg className="w-5 h-5 text-gray-400 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </motion.div>
-      )}
-
-      {/* Category Tabs */}
-      <motion.div
-        className="w-full max-w-3xl mb-3"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.18 }}
-      >
-        <div className="flex flex-wrap justify-center gap-2">
-          {CATEGORIES.map((cat) => {
-            const info = CATEGORY_INFO[cat];
-            const isSelected = selectedCategory === cat;
-            return (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2
-                  ${isSelected
-                    ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/25'
-                    : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
-                  }`}
-              >
-                <span>{info.emoji}</span>
-                <span>{info.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </motion.div>
-
-      {/* Volatility Filter Chips */}
-      <motion.div
-        className="w-full max-w-3xl mb-4"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.19 }}
-      >
-        <div className="flex flex-wrap justify-center gap-2">
-          {/* "All" volatility chip */}
-          <button
-            onClick={() => setSelectedVolatility('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all
-              ${selectedVolatility === 'all'
-                ? 'bg-white/20 text-white ring-1 ring-white/30'
-                : 'bg-white/5 text-gray-400 hover:bg-white/10'
-              }`}
-          >
-            Any Volatility
-          </button>
-
-          {/* Volatility level chips */}
-          {VOLATILITY_LEVELS.map((level) => {
-            const info = VOLATILITY_INFO[level];
-            const isSelected = selectedVolatility === level;
-            return (
-              <button
-                key={level}
-                onClick={() => setSelectedVolatility(level)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1
-                  ${isSelected
-                    ? `bg-white/20 ${info.color} ring-1 ring-current`
-                    : 'bg-white/5 text-gray-400 hover:bg-white/10'
-                  }`}
-              >
-                <span>{info.emoji}</span>
-                <span>{info.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </motion.div>
-
-      {/* Mystery Mode + Daily Gainers Row */}
-      <motion.div
-        className="w-full max-w-3xl mb-6"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
-        <div className="flex flex-wrap justify-center gap-3">
-          {/* Mystery Mode Button */}
-          <button
-            onClick={() => handleMysteryMode(selectedCategory)}
+          <MysteryModeButton
+            onClick={handleMysteryMode}
             disabled={isLoading}
-            className="px-5 py-3 rounded-xl font-bold text-white
-                       bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500
-                       hover:from-pink-600 hover:via-red-600 hover:to-yellow-600
-                       shadow-lg shadow-red-500/25 transition-all
-                       disabled:opacity-50 disabled:cursor-not-allowed
-                       flex items-center gap-2"
-          >
-            <span className="text-lg">🎲</span>
-            <span>Mystery</span>
-          </button>
+            unlocked={mysteryUnlocked}
+          />
+        </motion.div>
 
-          {/* Daily Gainers - Mystery Mode */}
-          {dailyGainers.length > 0 && (
-            <button
-              onClick={async () => {
-                const randomGainer = dailyGainers[Math.floor(Math.random() * dailyGainers.length)];
-                await handleSelectStock(randomGainer.symbol, true);
-              }}
-              disabled={isLoading || gainersLoading}
-              className="px-5 py-3 rounded-xl font-bold text-white
-                         bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500
-                         hover:from-green-600 hover:via-emerald-600 hover:to-teal-600
-                         shadow-lg shadow-green-500/25 transition-all
-                         disabled:opacity-50 disabled:cursor-not-allowed
-                         flex items-center gap-2"
-            >
-              <span className="text-lg">📈</span>
-              <span>Today's Gainer</span>
-            </button>
-          )}
-
-          {/* Leaderboard Button */}
-          {onOpenLeaderboard && (
-            <button
-              onClick={onOpenLeaderboard}
-              className="px-5 py-3 rounded-xl font-bold text-white
-                         bg-gradient-to-r from-amber-500 via-yellow-500 to-orange-500
-                         hover:from-amber-600 hover:via-yellow-600 hover:to-orange-600
-                         shadow-lg shadow-amber-500/25 transition-all
-                         flex items-center gap-2"
-            >
-              <span className="text-lg">🏆</span>
-              <span>Leaderboard</span>
-            </button>
-          )}
-        </div>
-        <div className="text-xs text-gray-500 w-full text-center mt-2">
-          Random stock • Hidden identity • Pure skill test
-        </div>
-      </motion.div>
-
-      {/* Today's Hot Stocks */}
-      {dailyGainers.length > 0 && (
+        {/* Daily Challenge */}
         <motion.div
-          className="w-full max-w-3xl mb-6"
+          className="mb-6"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.22 }}
+          transition={{ delay: 0.15 }}
         >
-          <h2 className="text-sm text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <span>🚀</span> Small Cap Runners
-            <span className="text-[10px] text-gray-600">(volatile small caps with big moves)</span>
-            {gainersLoading && <span className="text-xs">(loading...)</span>}
-          </h2>
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {dailyGainers.map((stock, index) => (
-              <motion.button
-                key={stock.symbol}
-                onClick={() => handleSelectStock(stock.symbol)}
-                disabled={isLoading}
-                className="flex-shrink-0 glass-card px-4 py-3 hover:bg-white/10 transition-colors
-                           disabled:opacity-50 disabled:cursor-not-allowed"
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.05 * index }}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-green-400 font-bold text-lg">#{index + 1}</span>
-                  <div>
-                    <div className="font-bold">{stock.symbol}</div>
-                    <div className="text-xs text-gray-400 max-w-[100px] truncate">{stock.name}</div>
-                    {stock.price !== undefined && (
-                      <div className="text-[10px] text-gray-500">${stock.price.toFixed(2)}</div>
-                    )}
-                  </div>
-                  {stock.changePercent !== undefined && (
-                    <span className="text-green-400 font-bold text-sm ml-auto">
-                      +{stock.changePercent.toFixed(1)}%
-                    </span>
-                  )}
-                </div>
-              </motion.button>
-            ))}
+          <DailyChallenge
+            title="Daily Challenge"
+            description="Win 3 trades today"
+            progress={0.66}
+            current={2}
+            target={3}
+            streakDays={3}
+            reward="+200 XP"
+            unlocked={dailyChallengeUnlocked}
+          />
+        </motion.div>
+
+        {/* Today's Movers */}
+        <motion.div
+          className="mb-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <QuickPlaySection
+            title="Today's Movers"
+            icon="🚀"
+            stocks={gainersForQuickPlay}
+            onSelectStock={(symbol) => handleSelectStock(symbol)}
+            isLoading={gainersLoading}
+          />
+        </motion.div>
+
+        {/* Leaderboard Teaser */}
+        <motion.div
+          className="mb-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+        >
+          <LeaderboardTeaser
+            topPlayer={{
+              rank: 1,
+              username: 'trader_pro',
+              pnlPercent: 45.2,
+            }}
+            userRank={12}
+            totalPlayers={1247}
+            unlocked={leaderboardUnlocked}
+            onClick={onOpenLeaderboard}
+          />
+        </motion.div>
+
+        {/* Category Quick Access */}
+        <motion.div
+          className="mb-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <h3 className="text-sm font-semibold text-gray-400 mb-3">Quick Play</h3>
+          <div className="grid grid-cols-2 gap-3">
+            {QUICK_CATEGORIES.map((cat) => {
+              const info = CATEGORY_INFO[cat];
+              return (
+                <motion.button
+                  key={cat}
+                  onClick={async () => {
+                    const randomStock = getRandomStock(cat);
+                    await handleSelectStock(randomStock.symbol, true);
+                  }}
+                  disabled={isLoading}
+                  className="glass-card p-4 text-left hover:bg-white/10 transition-colors disabled:opacity-50"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <span className="text-2xl mb-1 block">{info.emoji}</span>
+                  <span className="font-bold text-white">{info.label}</span>
+                  <p className="text-xs text-gray-500 mt-0.5">Random {info.label.toLowerCase()}</p>
+                </motion.button>
+              );
+            })}
           </div>
         </motion.div>
-      )}
 
-      {/* Stock Grid */}
-      <motion.div
-        className="w-full max-w-3xl"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
-        <h2 className="text-sm text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-          <span>
-            {searchQuery && filteredStocks.length > 0
-              ? 'Matching Stocks'
-              : `${CATEGORY_INFO[selectedCategory].emoji} ${CATEGORY_INFO[selectedCategory].label} Stocks`}
-          </span>
-          {selectedVolatility !== 'all' && (
-            <span className={`text-xs ${VOLATILITY_INFO[selectedVolatility].color}`}>
-              ({VOLATILITY_INFO[selectedVolatility].emoji} {VOLATILITY_INFO[selectedVolatility].label})
-            </span>
-          )}
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {filteredStocks.slice(0, 16).map((stock, index) => {
-            const volInfo = VOLATILITY_INFO[stock.volatility];
-            return (
-              <motion.button
-                key={stock.symbol}
-                onClick={() => handleSelectStock(stock.symbol)}
-                disabled={isLoading}
-                className="glass-card p-4 text-left hover:bg-white/10 transition-colors
-                           disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.03 * index }}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+        {/* Error Message */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mb-4 px-4 py-3 bg-red-500/20 border border-red-500/50 rounded-xl text-red-400 text-sm"
+            >
+              {error}
+              <button
+                onClick={() => setError(null)}
+                className="ml-2 text-red-300 hover:text-white"
               >
-                {/* Volatility Badge */}
-                <div className={`absolute top-2 right-2 text-xs font-bold ${volInfo.color}`}>
-                  {volInfo.emoji}
+                ×
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Loading Overlay */}
+        <AnimatePresence>
+          {isLoading && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+            >
+              <div className="text-center">
+                <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-white font-medium">Loading market data...</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Bottom Navigation / Search Bar */}
+      <div className="fixed bottom-0 left-0 right-0 bg-[#0f0f0f]/95 backdrop-blur-lg border-t border-white/10 safe-area-pb">
+        <AnimatePresence mode="wait">
+          {showSearch ? (
+            <motion.div
+              key="search"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="p-4"
+            >
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value.toUpperCase())}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Enter ticker (AAPL, TSLA, BTC-USD...)"
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl
+                             text-white placeholder-gray-500 uppercase
+                             focus:outline-none focus:border-indigo-500/50"
+                  autoFocus
+                />
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-2">
+                  {searchQuery && (
+                    <motion.button
+                      onClick={() => handleSelectStock(searchQuery)}
+                      className="px-3 py-1.5 bg-indigo-500 rounded-lg text-white text-sm font-medium"
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      Go
+                    </motion.button>
+                  )}
+                  <motion.button
+                    onClick={() => {
+                      setShowSearch(false);
+                      setSearchQuery('');
+                    }}
+                    className="px-3 py-1.5 bg-white/10 rounded-lg text-gray-400 text-sm"
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Cancel
+                  </motion.button>
                 </div>
-                <div className="font-bold text-lg">{stock.symbol}</div>
-                <div className="text-xs text-gray-400 truncate mb-1">{stock.name}</div>
-                <div className={`text-[10px] font-semibold ${volInfo.color} opacity-75`}>
-                  {volInfo.label}
+              </div>
+
+              {/* Search Results */}
+              {searchQuery && filteredStocks.length > 0 && (
+                <div className="mt-3 max-h-48 overflow-y-auto space-y-1">
+                  {filteredStocks.slice(0, 6).map((stock) => (
+                    <button
+                      key={stock.symbol}
+                      onClick={() => handleSelectStock(stock.symbol)}
+                      className="w-full px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-left flex items-center justify-between"
+                    >
+                      <div>
+                        <span className="font-bold text-white">{stock.symbol}</span>
+                        <span className="text-gray-500 text-sm ml-2">{stock.name}</span>
+                      </div>
+                      <span className="text-gray-400">→</span>
+                    </button>
+                  ))}
                 </div>
+              )}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="nav"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex items-center justify-around py-3 px-4"
+            >
+              <motion.button
+                onClick={() => setShowSearch(true)}
+                className="flex flex-col items-center gap-1 px-6 py-2 rounded-xl hover:bg-white/5"
+                whileTap={{ scale: 0.95 }}
+              >
+                <span className="text-xl">🔍</span>
+                <span className="text-xs text-gray-400">Search</span>
               </motion.button>
-            );
-          })}
-        </div>
 
-        {filteredStocks.length === 0 && !isCustomTicker && (
-          <div className="text-center text-gray-500 py-8">
-            No matching stocks. Type a valid ticker and press Enter.
-          </div>
-        )}
-      </motion.div>
+              <motion.button
+                onClick={onOpenLeaderboard}
+                className="flex flex-col items-center gap-1 px-6 py-2 rounded-xl hover:bg-white/5"
+                whileTap={{ scale: 0.95 }}
+              >
+                <span className="text-xl">🏆</span>
+                <span className="text-xs text-gray-400">Ranks</span>
+              </motion.button>
 
-      {/* Instructions */}
-      <motion.div
-        className="mt-8 text-center text-gray-500 text-sm max-w-md"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4 }}
-      >
-        <p className="mb-2">
-          🎮 <strong>Controls:</strong> <kbd className="px-1.5 py-0.5 bg-white/10 rounded">B</kbd> Buy,{' '}
-          <kbd className="px-1.5 py-0.5 bg-white/10 rounded">S</kbd> Sell,{' '}
-          <kbd className="px-1.5 py-0.5 bg-white/10 rounded">Space</kbd> Pause
-        </p>
-        <p>
-          Start with $10,000 • Use leverage for higher risk/reward
-        </p>
-      </motion.div>
+              <motion.button
+                onClick={handleRandomGainer}
+                disabled={isLoading || dailyGainers.length === 0}
+                className="flex flex-col items-center gap-1 px-6 py-2 rounded-xl bg-green-500/20 disabled:opacity-50"
+                whileTap={{ scale: 0.95 }}
+              >
+                <span className="text-xl">▶️</span>
+                <span className="text-xs text-green-400 font-semibold">Play Now</span>
+              </motion.button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

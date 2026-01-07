@@ -73,8 +73,16 @@ export function useGameEngine() {
     dispatch({ type: 'SET_SPEED', payload: speed });
   }, [dispatch]);
 
-  const setLeverage = useCallback((leverage: 1 | 2 | 5 | 10) => {
+  const setLeverage = useCallback((leverage: 1 | 2 | 4 | 10) => {
     dispatch({ type: 'SET_LEVERAGE', payload: leverage });
+  }, [dispatch]);
+
+  const sellHalf = useCallback(() => {
+    dispatch({ type: 'SELL_HALF' });
+  }, [dispatch]);
+
+  const closePosition = useCallback(() => {
+    dispatch({ type: 'CLOSE_POSITION' });
   }, [dispatch]);
 
   return {
@@ -82,6 +90,8 @@ export function useGameEngine() {
     dispatch,
     buy,
     sell,
+    sellHalf,
+    closePosition,
     togglePlay,
     pause,
     resume,

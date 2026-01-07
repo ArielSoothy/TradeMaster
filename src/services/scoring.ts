@@ -1,18 +1,89 @@
-import type { CompletedTrade, LevelConfig, SessionResult, GameState } from '../types/game';
+import type { CompletedTrade, LevelConfig, LevelUnlock, SessionResult, GameState } from '../types/game';
 
-// Level configurations
-export const LEVELS: LevelConfig[] = [
-  { level: 1, xpRequired: 0, title: 'Rookie Trader' },
-  { level: 2, xpRequired: 500, title: 'Apprentice' },
-  { level: 3, xpRequired: 1500, title: 'Day Trader' },
-  { level: 4, xpRequired: 3500, title: 'Swing Trader' },
-  { level: 5, xpRequired: 7000, title: 'Pro Trader' },
-  { level: 6, xpRequired: 12000, title: 'Market Maker' },
-  { level: 7, xpRequired: 20000, title: 'Hedge Fund' },
-  { level: 8, xpRequired: 35000, title: 'Wall Street Legend' },
-  { level: 9, xpRequired: 55000, title: 'Market Wizard' },
-  { level: 10, xpRequired: 80000, title: 'Trading God' },
+// Level system constants
+const MAX_LEVEL = 100;
+
+// Soft exponential XP formula: starts easy, gets harder but not too steep
+// Level 2: 500, Level 10: ~4,000, Level 20: ~13,000, Level 50: ~53,000, Level 100: ~155,000
+function generateLevelXP(level: number): number {
+  if (level <= 1) return 0;
+  return Math.floor(500 * Math.pow(level - 1, 1.5));
+}
+
+// Titles grouped by tiers (every 10 levels)
+const LEVEL_TITLES = [
+  'Rookie Trader',      // 1-9
+  'Day Trader',         // 10-19
+  'Swing Trader',       // 20-29
+  'Pro Trader',         // 30-39
+  'Market Maker',       // 40-49
+  'Hedge Fund Manager', // 50-59
+  'Wall Street Legend', // 60-69
+  'Market Wizard',      // 70-79
+  'Trading Titan',      // 80-89
+  'Trading God',        // 90-99
+  'Legendary Trader',   // 100+
 ];
+
+function getLevelTitle(level: number): string {
+  const tierIndex = Math.min(Math.floor(level / 10), LEVEL_TITLES.length - 1);
+  return LEVEL_TITLES[tierIndex];
+}
+
+// Per-level unlocks - features that unlock at specific levels
+const LEVEL_UNLOCKS: Record<number, LevelUnlock[]> = {
+  1: [{ type: 'leverage', id: '1x', name: '1x Leverage', description: 'Basic trading' }],
+  5: [{ type: 'leverage', id: '2x', name: '2x Leverage', description: 'Double your risk/reward' }],
+  10: [{ type: 'feature', id: 'mystery', name: 'Mystery Mode', description: 'Trade unknown stocks' }],
+  15: [{ type: 'leverage', id: '4x', name: '4x Leverage', description: 'Quadruple exposure' }],
+  20: [{ type: 'category', id: 'meme', name: 'Meme Stocks', description: 'High volatility meme plays' }],
+  25: [{ type: 'leverage', id: '10x', name: '10x Leverage', description: 'Maximum risk mode' }],
+  30: [{ type: 'feature', id: 'leaderboard', name: 'Leaderboard', description: 'Compete globally' }],
+  40: [{ type: 'category', id: 'leveraged_etf', name: 'Leveraged ETFs', description: 'TQQQ, SOXL and more' }],
+  50: [{ type: 'feature', id: 'daily_challenge', name: 'Daily Challenges', description: 'Special daily missions' }],
+};
+
+// Generate all levels dynamically
+export const LEVELS: LevelConfig[] = Array.from(
+  { length: MAX_LEVEL },
+  (_, i) => ({
+    level: i + 1,
+    xpRequired: generateLevelXP(i + 1),
+    title: getLevelTitle(i + 1),
+    unlocks: LEVEL_UNLOCKS[i + 1] || [],
+  })
+);
+
+// Export helper to get unlocks for a level
+export function getUnlocksForLevel(level: number): LevelUnlock[] {
+  return LEVEL_UNLOCKS[level] || [];
+}
+
+// Export helper to get all unlocks up to a level
+export function getAllUnlocksUpToLevel(level: number): LevelUnlock[] {
+  const allUnlocks: LevelUnlock[] = [];
+  for (let l = 1; l <= level; l++) {
+    if (LEVEL_UNLOCKS[l]) {
+      allUnlocks.push(...LEVEL_UNLOCKS[l]);
+    }
+  }
+  return allUnlocks;
+}
+
+// Export helper to check if a feature is unlocked
+export function isFeatureUnlocked(level: number, featureId: string): boolean {
+  const unlocks = getAllUnlocksUpToLevel(level);
+  return unlocks.some(u => u.id === featureId);
+}
+
+// Export helper to get available leverage options for a level
+export function getAvailableLeverages(level: number): number[] {
+  const leverages: number[] = [1]; // 1x always available
+  if (level >= 5) leverages.push(2);
+  if (level >= 15) leverages.push(4);
+  if (level >= 25) leverages.push(10);
+  return leverages;
+}
 
 // Scoring constants
 const SCORING = {
@@ -102,7 +173,7 @@ export function getLevelProgress(totalXP: number): {
 
   const currentLevelXP = totalXP - currentLevelConfig.xpRequired;
   const nextLevelXP = nextLevelConfig.xpRequired - currentLevelConfig.xpRequired;
-  const progress = currentLevel >= 10 ? 1 : currentLevelXP / nextLevelXP;
+  const progress = currentLevel >= MAX_LEVEL ? 1 : currentLevelXP / nextLevelXP;
 
   return {
     currentLevel,

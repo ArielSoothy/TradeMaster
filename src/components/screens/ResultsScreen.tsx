@@ -9,7 +9,7 @@ import { ConfettiBurst } from '../effects/ParticleSystem';
 import { useSound } from '../../hooks/useSound';
 import { type AchievementUnlock, getRarityColor, getRarityLabel } from '../../services/achievements';
 import { loadProgress, getXPForCurrentLevel } from '../../services/storage';
-import { ShareCard, type ShareCardData } from '../social/ShareCard';
+import { ShareCard } from '../social/ShareCard';
 
 interface ResultsScreenProps {
   onPlayAgain: () => void;

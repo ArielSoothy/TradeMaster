@@ -7,7 +7,7 @@ interface LeverageSelectorProps {
   disabled: boolean;
 }
 
-const LEVERAGE_OPTIONS: LeverageOption[] = [1, 2, 5, 10];
+const LEVERAGE_OPTIONS: LeverageOption[] = [1, 2, 4, 10];
 
 export function LeverageSelector({ value, onChange, disabled }: LeverageSelectorProps) {
   return (

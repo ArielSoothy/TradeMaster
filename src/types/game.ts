@@ -35,7 +35,7 @@ export interface CompletedTrade {
 }
 
 // Leverage options
-export type LeverageOption = 1 | 2 | 5 | 10;
+export type LeverageOption = 1 | 2 | 4 | 10;
 
 // Playback speed options
 export type SpeedOption = 1 | 2 | 4;
@@ -87,6 +87,7 @@ export type GameAction =
   | { type: 'BUY' }
   | { type: 'SELL' }
   | { type: 'CLOSE_POSITION' }
+  | { type: 'SELL_HALF' }
   | { type: 'SET_LEVERAGE'; payload: LeverageOption }
   | { type: 'SET_SPEED'; payload: SpeedOption }
   | { type: 'TOGGLE_PLAY' }
@@ -110,11 +111,20 @@ export interface SessionResult {
   levelTitle: string;
 }
 
+// Level unlock types
+export interface LevelUnlock {
+  type: 'leverage' | 'feature' | 'category';
+  id: string;
+  name: string;
+  description?: string;
+}
+
 // Level configuration
 export interface LevelConfig {
   level: number;
   xpRequired: number;
   title: string;
+  unlocks?: LevelUnlock[];
 }
 
 // Stock option for search
