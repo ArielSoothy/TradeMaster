@@ -77,9 +77,10 @@ export interface ChapterProgress {
 
 export interface CareerProgress {
   currentChapter: number;
-  currentMission: string;
+  currentMissionId: string;
   chapters: Record<number, ChapterProgress>;
-  missions: Record<string, MissionProgress>;
+  missionScores: Record<string, MissionProgress>;
+  completedMissions: string[];
   totalMissionsCompleted: number;
   careerStartedAt: string;
   lastPlayedAt: string;

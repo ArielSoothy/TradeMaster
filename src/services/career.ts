@@ -3,8 +3,244 @@ import type {
   ChapterProgress,
   Mission,
   GameMode,
+  WinCondition,
+  MissionReward,
 } from '../types/career';
 import { CHAPTERS, getMissionById, getNextMission, getTotalMissions } from '../data/missions';
+
+// Win condition check result
+export interface WinConditionResult {
+  condition: WinCondition;
+  passed: boolean;
+  actualValue: number;
+  targetValue: number;
+}
+
+export interface MissionResult {
+  missionId: string;
+  allConditionsMet: boolean;
+  conditionResults: WinConditionResult[];
+  pnl: number;
+  pnlPercent: number;
+  grade: string;
+  score: number;
+  rewards: MissionReward[];
+}
+
+// Game state needed for win condition checking
+export interface GameStateForMission {
+  totalPnL: number;
+  startingBalance: number;
+  balance: number;
+  winCount: number;
+  lossCount: number;
+  maxStreak: number;
+  currentStreak: number;
+  maxDrawdown: number;
+  gameStatus: 'playing' | 'paused' | 'ended' | 'idle';
+  // For beat_market condition
+  startPrice: number;
+  endPrice: number;
+}
+
+/**
+ * Check all win conditions for a mission
+ */
+export function checkWinConditions(
+  mission: Mission,
+  gameState: GameStateForMission
+): WinConditionResult[] {
+  const results: WinConditionResult[] = [];
+
+  for (const condition of mission.winConditions) {
+    const result = checkSingleCondition(condition, gameState);
+    results.push(result);
+  }
+
+  return results;
+}
+
+/**
+ * Check a single win condition
+ */
+function checkSingleCondition(
+  condition: WinCondition,
+  state: GameStateForMission
+): WinConditionResult {
+  let actualValue = 0;
+  let passed = false;
+
+  const pnlPercent = (state.totalPnL / state.startingBalance) * 100;
+  const totalTrades = state.winCount + state.lossCount;
+  const winRate = totalTrades > 0 ? (state.winCount / totalTrades) * 100 : 0;
+  const buyAndHoldReturn = state.startPrice > 0
+    ? ((state.endPrice - state.startPrice) / state.startPrice) * 100
+    : 0;
+
+  switch (condition.type) {
+    case 'profit_target':
+      actualValue = state.totalPnL;
+      passed = state.totalPnL >= condition.value;
+      break;
+
+    case 'profit_percent':
+      actualValue = pnlPercent;
+      passed = pnlPercent >= condition.value;
+      break;
+
+    case 'survive':
+      actualValue = state.balance > 0 ? 1 : 0;
+      passed = state.balance > 0;
+      break;
+
+    case 'win_streak':
+      actualValue = state.maxStreak;
+      passed = state.maxStreak >= condition.value;
+      break;
+
+    case 'win_rate':
+      actualValue = winRate;
+      passed = winRate >= condition.value;
+      break;
+
+    case 'max_drawdown':
+      actualValue = state.maxDrawdown;
+      // Drawdown should be UNDER the target value
+      passed = state.maxDrawdown <= condition.value;
+      break;
+
+    case 'beat_market':
+      actualValue = pnlPercent - buyAndHoldReturn;
+      passed = pnlPercent > buyAndHoldReturn;
+      break;
+
+    case 'trades_count':
+      actualValue = totalTrades;
+      passed = totalTrades >= condition.value;
+      break;
+
+    default:
+      passed = false;
+  }
+
+  return {
+    condition,
+    passed,
+    actualValue,
+    targetValue: condition.value,
+  };
+}
+
+/**
+ * Evaluate mission completion and calculate rewards
+ */
+export function evaluateMission(
+  mission: Mission,
+  gameState: GameStateForMission
+): MissionResult {
+  const conditionResults = checkWinConditions(mission, gameState);
+  const allConditionsMet = conditionResults.every((r) => r.passed);
+
+  const pnl = gameState.totalPnL;
+  const pnlPercent = (pnl / gameState.startingBalance) * 100;
+  const totalTrades = gameState.winCount + gameState.lossCount;
+  const winRate = totalTrades > 0 ? (gameState.winCount / totalTrades) * 100 : 0;
+
+  // Calculate grade
+  const grade = calculateMissionGrade(pnl, pnlPercent, winRate, gameState.maxStreak, allConditionsMet);
+
+  // Calculate score based on performance
+  const score = calculateMissionScore(pnl, pnlPercent, winRate, gameState.maxStreak, conditionResults);
+
+  // Only give rewards if all conditions are met
+  const rewards = allConditionsMet ? mission.rewards : [];
+
+  return {
+    missionId: mission.id,
+    allConditionsMet,
+    conditionResults,
+    pnl,
+    pnlPercent,
+    grade,
+    score,
+    rewards,
+  };
+}
+
+/**
+ * Calculate mission grade
+ */
+function calculateMissionGrade(
+  pnl: number,
+  pnlPercent: number,
+  winRate: number,
+  maxStreak: number,
+  passedAllConditions: boolean
+): string {
+  if (!passedAllConditions) {
+    // If didn't pass, grade based on how close they got
+    if (pnl > 0 && winRate > 40) return 'C';
+    if (pnl > 0) return 'D';
+    return 'F';
+  }
+
+  // Passed all conditions - grade based on excellence
+  let score = 0;
+
+  // PnL percent scoring
+  if (pnlPercent >= 20) score += 35;
+  else if (pnlPercent >= 10) score += 30;
+  else if (pnlPercent >= 5) score += 25;
+  else if (pnlPercent >= 0) score += 15;
+
+  // Win rate scoring
+  if (winRate >= 80) score += 35;
+  else if (winRate >= 60) score += 30;
+  else if (winRate >= 50) score += 25;
+  else score += 15;
+
+  // Streak bonus
+  if (maxStreak >= 5) score += 30;
+  else if (maxStreak >= 3) score += 20;
+  else score += 10;
+
+  // Convert to grade
+  if (score >= 90) return 'S';
+  if (score >= 75) return 'A';
+  if (score >= 60) return 'B';
+  return 'C'; // Passed but not great
+}
+
+/**
+ * Calculate mission score (for leaderboards/display)
+ */
+function calculateMissionScore(
+  pnl: number,
+  pnlPercent: number,
+  winRate: number,
+  maxStreak: number,
+  conditionResults: WinConditionResult[]
+): number {
+  let score = 0;
+
+  // Base score from PnL
+  score += Math.max(0, pnl);
+
+  // Bonus for % return
+  score += Math.max(0, pnlPercent * 100);
+
+  // Bonus for win rate
+  score += winRate * 10;
+
+  // Bonus for streaks
+  score += maxStreak * 50;
+
+  // Bonus for each condition passed
+  const conditionsPassed = conditionResults.filter((r) => r.passed).length;
+  score += conditionsPassed * 200;
+
+  return Math.round(score);
+}
 
 const CAREER_STORAGE_KEY = 'trademaster_career';
 const GAME_MODE_KEY = 'trademaster_game_mode';
@@ -25,9 +261,10 @@ function createDefaultCareerProgress(): CareerProgress {
 
   return {
     currentChapter: 1,
-    currentMission: CHAPTERS[0]?.missions[0]?.id || '',
+    currentMissionId: CHAPTERS[0]?.missions[0]?.id || '',
     chapters,
-    missions: {},
+    missionScores: {},
+    completedMissions: [],
     totalMissionsCompleted: 0,
     careerStartedAt: new Date().toISOString(),
     lastPlayedAt: new Date().toISOString(),
@@ -39,11 +276,24 @@ export function loadCareerProgress(): CareerProgress {
   try {
     const stored = localStorage.getItem(CAREER_STORAGE_KEY);
     if (stored) {
-      const parsed = JSON.parse(stored) as CareerProgress;
+      const parsed = JSON.parse(stored);
+      // Migrate old format if needed
+      const progress: CareerProgress = {
+        currentChapter: parsed.currentChapter ?? 1,
+        currentMissionId: parsed.currentMissionId ?? parsed.currentMission ?? CHAPTERS[0]?.missions[0]?.id ?? '',
+        chapters: parsed.chapters ?? {},
+        missionScores: parsed.missionScores ?? parsed.missions ?? {},
+        completedMissions: parsed.completedMissions ?? Object.keys(parsed.missions ?? {}).filter(
+          (id: string) => parsed.missions?.[id]?.completed
+        ),
+        totalMissionsCompleted: parsed.totalMissionsCompleted ?? 0,
+        careerStartedAt: parsed.careerStartedAt ?? new Date().toISOString(),
+        lastPlayedAt: parsed.lastPlayedAt ?? new Date().toISOString(),
+      };
       // Ensure all chapters exist (for backwards compatibility)
       for (const chapter of CHAPTERS) {
-        if (!parsed.chapters[chapter.id]) {
-          parsed.chapters[chapter.id] = {
+        if (!progress.chapters[chapter.id]) {
+          progress.chapters[chapter.id] = {
             chapterId: chapter.id,
             missionsCompleted: 0,
             totalMissions: chapter.missions.length,
@@ -51,7 +301,7 @@ export function loadCareerProgress(): CareerProgress {
           };
         }
       }
-      return parsed;
+      return progress;
     }
   } catch (e) {
     console.error('Failed to load career progress:', e);
@@ -85,10 +335,10 @@ export function completeMission(
   }
 
   // Update or create mission progress
-  const existing = progress.missions[missionId];
-  const isFirstCompletion = !existing?.completed;
+  const existing = progress.missionScores[missionId];
+  const isFirstCompletion = !progress.completedMissions.includes(missionId);
 
-  progress.missions[missionId] = {
+  progress.missionScores[missionId] = {
     missionId,
     completed: true,
     bestScore: Math.max(existing?.bestScore || 0, score),
@@ -100,6 +350,8 @@ export function completeMission(
 
   // Update chapter progress
   if (isFirstCompletion) {
+    progress.completedMissions.push(missionId);
+
     const chapter = progress.chapters[mission.chapter];
     if (chapter) {
       chapter.missionsCompleted += 1;
@@ -118,7 +370,7 @@ export function completeMission(
   // Update current mission to next one
   const nextMission = getNextMission(missionId);
   if (nextMission) {
-    progress.currentMission = nextMission.id;
+    progress.currentMissionId = nextMission.id;
     progress.currentChapter = nextMission.chapter;
   }
 
@@ -129,9 +381,9 @@ export function completeMission(
 // Record a mission attempt (without completing)
 export function recordMissionAttempt(missionId: string): void {
   const progress = loadCareerProgress();
-  const existing = progress.missions[missionId];
+  const existing = progress.missionScores[missionId];
 
-  progress.missions[missionId] = {
+  progress.missionScores[missionId] = {
     ...existing,
     missionId,
     completed: existing?.completed || false,
@@ -164,13 +416,13 @@ export function isMissionUnlocked(missionId: string, progress?: CareerProgress):
   const previousMission = chapterData.missions.find(m => m.order === mission.order - 1);
   if (!previousMission) return true;
 
-  return careerProgress.missions[previousMission.id]?.completed || false;
+  return careerProgress.completedMissions.includes(previousMission.id);
 }
 
 // Get the current mission to play
 export function getCurrentMission(): Mission | undefined {
   const progress = loadCareerProgress();
-  return getMissionById(progress.currentMission);
+  return getMissionById(progress.currentMissionId);
 }
 
 // Get career completion percentage
@@ -255,7 +507,7 @@ export interface CareerStats {
 
 export function getCareerStats(): CareerStats {
   const progress = loadCareerProgress();
-  const currentMission = getMissionById(progress.currentMission);
+  const currentMission = getMissionById(progress.currentMissionId);
   const currentChapter = CHAPTERS.find(c => c.id === progress.currentChapter);
 
   return {

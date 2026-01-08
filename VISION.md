@@ -145,9 +145,15 @@ src/components/screens/CareerScreen.tsx
 src/components/screens/MissionBriefingScreen.tsx
 ```
 
-**TODO:**
-- [ ] Implement mission completion logic and rewards
-- [ ] Add mission win condition checking
+**Completed:**
+- [x] Implement mission completion logic and rewards
+  - evaluateMission() checks all win conditions
+  - completeMission() updates career progress
+  - MissionResult displayed on ResultsScreen
+- [x] Add mission win condition checking
+  - 8 condition types: profit_target, profit_percent, survive, win_streak, win_rate, max_drawdown, beat_market, trades_count
+  - Checklist UI with pass/fail indicators
+  - Rewards displayed when all conditions met
 
 ### Phase 3: Mode Differentiation - PENDING
 

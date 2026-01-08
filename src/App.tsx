@@ -17,6 +17,13 @@ import { initCandleCache } from './services/candle-cache';
 import { useGame } from './context/GameContext';
 import { fetchHistoricalData } from './services/yahoo-finance';
 import {
+  evaluateMission,
+  completeMission,
+  type MissionResult,
+  type GameStateForMission,
+} from './services/career';
+import { getMissionById } from './data/missions';
+import {
   isTutorialCompleted,
   markTutorialCompleted,
   TUTORIAL_CONFIG,
@@ -32,6 +39,7 @@ function AppContent() {
   const [isTutorialMode, setIsTutorialMode] = useState(false);
   const [selectedMission, setSelectedMission] = useState<Mission | null>(null);
   const [missionLoading, setMissionLoading] = useState(false);
+  const [lastMissionResult, setLastMissionResult] = useState<MissionResult | null>(null);
   const { state, dispatch } = useGame();
   const { user, isAnonymous, refreshProfile } = useAuth();
 
@@ -152,6 +160,47 @@ function AppContent() {
     const winRate = totalTrades > 0 ? (state.winCount / totalTrades) * 100 : 0;
     const grade = getGrade(totalPnL, winRate, state.maxStreak);
 
+    // Handle career mode mission completion
+    if (state.gameMode === 'career' && state.missionId) {
+      const mission = getMissionById(state.missionId);
+      if (mission) {
+        // Build game state for mission evaluation
+        const startPrice = state.allCandleData[0]?.close || state.basePrice;
+        const endPrice = state.allCandleData[state.currentCandleIndex]?.close || startPrice;
+
+        const gameStateForMission: GameStateForMission = {
+          totalPnL,
+          startingBalance: state.startingBalance,
+          balance: state.balance,
+          winCount: state.winCount,
+          lossCount: state.lossCount,
+          maxStreak: state.maxStreak,
+          currentStreak: state.currentStreak,
+          maxDrawdown: state.maxDrawdown,
+          gameStatus: state.gameStatus,
+          startPrice,
+          endPrice,
+        };
+
+        // Evaluate mission conditions
+        const missionResult = evaluateMission(mission, gameStateForMission);
+        setLastMissionResult(missionResult);
+
+        // If all conditions met, complete the mission and unlock next
+        if (missionResult.allConditionsMet) {
+          completeMission(
+            mission.id,
+            missionResult.pnl,
+            missionResult.score,
+            missionResult.grade
+          );
+          console.log(`🎯 Mission completed: ${mission.title} - Grade: ${missionResult.grade}`);
+        } else {
+          console.log(`❌ Mission failed: ${mission.title} - Keep trying!`);
+        }
+      }
+    }
+
     if (totalTrades > 0) {
       recordSession({
         symbol: state.mysteryMode ? 'MYSTERY' : state.symbol,
@@ -235,6 +284,7 @@ function AppContent() {
 
   const handlePlayAgain = useCallback(() => {
     setNewAchievements([]);
+    setLastMissionResult(null);
     // Dispatch START_GAME to reset game state with same data
     dispatch({ type: 'START_GAME' });
     setCurrentScreen('game');
@@ -242,6 +292,8 @@ function AppContent() {
 
   const handleBackToHome = useCallback(() => {
     setNewAchievements([]);
+    setLastMissionResult(null);
+    setSelectedMission(null);
     setCurrentScreen('home');
   }, []);
 
@@ -312,6 +364,7 @@ function AppContent() {
           onPlayAgain={handlePlayAgain}
           onBackToHome={handleBackToHome}
           newAchievements={newAchievements}
+          missionResult={lastMissionResult}
         />
       );
     default:

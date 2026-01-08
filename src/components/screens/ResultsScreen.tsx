@@ -10,17 +10,21 @@ import { useSound } from '../../hooks/useSound';
 import { type AchievementUnlock, getRarityColor, getRarityLabel } from '../../services/achievements';
 import { loadProgress, getXPForCurrentLevel } from '../../services/storage';
 import { ShareCard } from '../social/ShareCard';
+import { type MissionResult } from '../../services/career';
+import { getMissionById } from '../../data/missions';
 
 interface ResultsScreenProps {
   onPlayAgain: () => void;
   onBackToHome: () => void;
   newAchievements?: AchievementUnlock[];
+  missionResult?: MissionResult | null;
 }
 
 export function ResultsScreen({
   onPlayAgain,
   onBackToHome,
   newAchievements = [],
+  missionResult,
 }: ResultsScreenProps) {
   const { state } = useGame();
   const { playSound } = useSound();
@@ -28,6 +32,16 @@ export function ResultsScreen({
 
   const result = useMemo(() => calculateSessionResult(state), [state]);
   const levelConfig = useMemo(() => getLevelConfig(result.newLevel), [result.newLevel]);
+
+  // Get mission details if in career mode
+  const mission = useMemo(() => {
+    if (missionResult?.missionId) {
+      return getMissionById(missionResult.missionId);
+    }
+    return null;
+  }, [missionResult?.missionId]);
+
+  const isCareerMode = state.gameMode === 'career' && mission && missionResult;
 
   // Calculate beat market delta
   const beatMarketDelta = useMemo(() => {
@@ -128,9 +142,13 @@ export function ResultsScreen({
             animate={{ scale: 1, rotate: 0 }}
             transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
           >
-            {result.grade === 'S' ? '👑' :
-             result.grade === 'A' ? '🏆' :
-             result.totalPnL >= 0 ? '📈' : '📉'}
+            {isCareerMode ? (
+              missionResult.allConditionsMet ? '🎯' : '❌'
+            ) : (
+              result.grade === 'S' ? '👑' :
+              result.grade === 'A' ? '🏆' :
+              result.totalPnL >= 0 ? '📈' : '📉'
+            )}
           </motion.div>
           <motion.h1
             className="text-3xl font-bold mb-2"
@@ -138,9 +156,13 @@ export function ResultsScreen({
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
           >
-            {result.grade === 'S' ? 'LEGENDARY!' :
-             result.grade === 'A' ? 'Excellent!' :
-             result.totalPnL >= 0 ? 'Session Complete' : 'Better Luck Next Time'}
+            {isCareerMode ? (
+              missionResult.allConditionsMet ? 'Mission Complete!' : 'Mission Failed'
+            ) : (
+              result.grade === 'S' ? 'LEGENDARY!' :
+              result.grade === 'A' ? 'Excellent!' :
+              result.totalPnL >= 0 ? 'Session Complete' : 'Better Luck Next Time'
+            )}
           </motion.h1>
           <motion.p
             className="text-gray-400"
@@ -148,9 +170,90 @@ export function ResultsScreen({
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4 }}
           >
-            {state.mysteryMode ? '🎲 MYSTERY MODE' : result.symbol}
+            {isCareerMode ? mission.title : (state.mysteryMode ? '🎲 MYSTERY MODE' : result.symbol)}
           </motion.p>
         </div>
+
+        {/* Career Mode Mission Results */}
+        {isCareerMode && (
+          <motion.div
+            className={`glass-card p-5 mb-6 border ${
+              missionResult.allConditionsMet
+                ? 'border-green-500/30 bg-gradient-to-br from-green-500/10 to-emerald-500/10'
+                : 'border-red-500/30 bg-gradient-to-br from-red-500/10 to-orange-500/10'
+            }`}
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ delay: 0.5, type: 'spring' }}
+          >
+            <div className="text-sm font-semibold mb-3 text-center">
+              {missionResult.allConditionsMet ? (
+                <span className="text-green-400">🎉 All Objectives Achieved!</span>
+              ) : (
+                <span className="text-red-400">Objectives Not Met</span>
+              )}
+            </div>
+
+            {/* Win Condition Checklist */}
+            <div className="space-y-2">
+              {missionResult.conditionResults.map((cr, idx) => (
+                <motion.div
+                  key={idx}
+                  className={`flex items-center justify-between p-2 rounded-lg ${
+                    cr.passed ? 'bg-green-500/10' : 'bg-red-500/10'
+                  }`}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.6 + idx * 0.1 }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={cr.passed ? 'text-green-400' : 'text-red-400'}>
+                      {cr.passed ? '✓' : '✗'}
+                    </span>
+                    <span className="text-sm">{cr.condition.description}</span>
+                  </div>
+                  <span className={`text-sm font-mono ${cr.passed ? 'text-green-400' : 'text-red-400'}`}>
+                    {cr.condition.type === 'survive' ? (
+                      cr.passed ? 'Survived' : 'Liquidated'
+                    ) : cr.condition.type === 'max_drawdown' ? (
+                      `${cr.actualValue.toFixed(1)}% / ${cr.targetValue}%`
+                    ) : cr.condition.type === 'profit_percent' || cr.condition.type === 'win_rate' ? (
+                      `${cr.actualValue.toFixed(1)}% / ${cr.targetValue}%`
+                    ) : cr.condition.type === 'profit_target' ? (
+                      `$${cr.actualValue.toFixed(0)} / $${cr.targetValue}`
+                    ) : (
+                      `${cr.actualValue} / ${cr.targetValue}`
+                    )}
+                  </span>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Mission Rewards (if passed) */}
+            {missionResult.allConditionsMet && missionResult.rewards.length > 0 && (
+              <motion.div
+                className="mt-4 pt-4 border-t border-white/10"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 1 }}
+              >
+                <div className="text-sm text-yellow-400 font-semibold mb-2 text-center">
+                  🏆 Rewards Earned
+                </div>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {missionResult.rewards.map((reward, idx) => (
+                    <span
+                      key={idx}
+                      className="px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-300 text-sm"
+                    >
+                      {reward.label}
+                    </span>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </motion.div>
+        )}
 
         {/* Mystery Stock Reveal */}
         {state.mysteryMode && (
