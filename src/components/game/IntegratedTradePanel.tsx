@@ -89,6 +89,7 @@ export function IntegratedTradePanel({
               key={`long-${leverage}`}
               onClick={() => !isDisabled && onTrade('long', leverage)}
               disabled={isDisabled}
+              data-tutorial={leverage === 1 ? 'buy-button' : undefined}
               className={`
                 flex-1 py-4 rounded-xl font-bold text-sm sm:text-base
                 flex flex-col items-center justify-center gap-0.5
@@ -122,6 +123,7 @@ export function IntegratedTradePanel({
               key={`short-${leverage}`}
               onClick={() => !isDisabled && onTrade('short', leverage)}
               disabled={isDisabled}
+              data-tutorial={leverage === 1 ? 'sell-button' : undefined}
               className={`
                 flex-1 py-4 rounded-xl font-bold text-sm sm:text-base
                 flex flex-col items-center justify-center gap-0.5

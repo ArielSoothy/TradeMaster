@@ -7,17 +7,25 @@ import { ResultsScreen } from './components/screens/ResultsScreen';
 import { LeaderboardScreen } from './components/screens/LeaderboardScreen';
 import { ScreenShakeProvider } from './components/effects/ScreenShake';
 import { ParticleProvider } from './components/effects/ParticleSystem';
+import { WelcomeModal } from './components/tutorial';
 import { checkDailyStreak, loadProgress, recordSession, addXP } from './services/storage';
 import { submitSession, calculateBaselineMove, syncAchievement } from './services/sync';
 import { checkAchievements, type AchievementUnlock } from './services/achievements';
 import { initCandleCache } from './services/candle-cache';
 import { useGame } from './context/GameContext';
+import {
+  isTutorialCompleted,
+  markTutorialCompleted,
+  TUTORIAL_CONFIG,
+} from './data/tutorial-scenarios';
 
-type Screen = 'home' | 'game' | 'results' | 'leaderboard';
+type Screen = 'home' | 'game' | 'results' | 'leaderboard' | 'tutorial';
 
 function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
   const [newAchievements, setNewAchievements] = useState<AchievementUnlock[]>([]);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [isTutorialMode, setIsTutorialMode] = useState(false);
   const { state, dispatch } = useGame();
   const { user, isAnonymous, refreshProfile } = useAuth();
 
@@ -33,6 +41,49 @@ function AppContent() {
     if (isNewDay && streak > 1) {
       console.log(`🔥 Daily streak: ${streak} days!`);
     }
+
+    // Check if first-time user
+    if (!isTutorialCompleted()) {
+      setShowWelcome(true);
+    }
+  }, []);
+
+  // Start tutorial with pre-baked data
+  const handleStartTutorial = useCallback(() => {
+    setShowWelcome(false);
+    setIsTutorialMode(true);
+
+    // Load tutorial candle data
+    dispatch({
+      type: 'LOAD_DATA',
+      payload: {
+        symbol: TUTORIAL_CONFIG.displaySymbol,
+        data: TUTORIAL_CONFIG.candles,
+        mysteryMode: false,
+        gameMode: 'arcade',
+      },
+    });
+
+    dispatch({
+      type: 'START_GAME',
+      payload: { startIndex: TUTORIAL_CONFIG.startIndex },
+    });
+
+    setCurrentScreen('tutorial');
+  }, [dispatch]);
+
+  // Skip tutorial
+  const handleSkipTutorial = useCallback(() => {
+    setShowWelcome(false);
+    markTutorialCompleted();
+    setCurrentScreen('home');
+  }, []);
+
+  // Tutorial completed
+  const handleTutorialComplete = useCallback(() => {
+    setIsTutorialMode(false);
+    markTutorialCompleted();
+    setCurrentScreen('home');
   }, []);
 
   const handleStartGame = useCallback(() => {
@@ -143,6 +194,16 @@ function AppContent() {
     setCurrentScreen('leaderboard');
   }, []);
 
+  // Render welcome modal for first-time users
+  if (showWelcome) {
+    return (
+      <WelcomeModal
+        onStartTutorial={handleStartTutorial}
+        onSkipTutorial={handleSkipTutorial}
+      />
+    );
+  }
+
   switch (currentScreen) {
     case 'home':
       return <HomeScreen onStartGame={handleStartGame} onOpenLeaderboard={handleOpenLeaderboard} />;
@@ -153,6 +214,14 @@ function AppContent() {
         <GameScreen
           onGameEnd={handleGameEnd}
           onBackToHome={handleBackToHome}
+        />
+      );
+    case 'tutorial':
+      return (
+        <GameScreen
+          onGameEnd={handleTutorialComplete}
+          onBackToHome={handleTutorialComplete}
+          isTutorial={true}
         />
       );
     case 'results':

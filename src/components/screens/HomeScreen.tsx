@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   searchStocks,
   fetchStockDataWithCache,
+  fetchHistoricalData,
   getStocksByCategory,
   getRandomStock,
   fetchLowFloatRunners,
@@ -146,20 +147,53 @@ export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) 
 
   // Career mode - start with mission data
   const handleStartCareer = useCallback(async () => {
-    const mission = getCurrentMission();
-    if (!mission) {
-      // Start first mission if no progress
-      const firstMission = CHAPTERS[0]?.missions[0];
-      if (firstMission) {
-        await handleSelectStock(firstMission.stockSymbol, 'career');
-      }
-      return;
-    }
+    setIsLoading(true);
+    setError(null);
 
-    // TODO: Load specific date range for mission
-    // For now, just load the stock
-    await handleSelectStock(mission.stockSymbol, 'career');
-  }, [handleSelectStock]);
+    try {
+      const mission = getCurrentMission() ?? CHAPTERS[0]?.missions[0];
+      if (!mission) {
+        throw new Error('No missions available');
+      }
+
+      // Fetch historical data for the mission's specific date range
+      const data = await fetchHistoricalData({
+        symbol: mission.stockSymbol,
+        startDate: mission.startDate,
+        endDate: mission.endDate,
+        interval: '5m', // 5-minute candles work well for historical data
+      });
+
+      if (data.length < 20) {
+        throw new Error(`Not enough historical data for ${mission.stockSymbol} on ${mission.historicalDate}.`);
+      }
+
+      // Save mode preference
+      setGameMode('career');
+      setCurrentGameMode('career');
+
+      // Load mission data into game context
+      dispatch({
+        type: 'LOAD_DATA',
+        payload: {
+          symbol: mission.stockSymbol,
+          data,
+          mysteryMode: false, // Career mode shows real stock info
+          gameMode: 'career',
+          missionId: mission.id,
+        },
+      });
+
+      // Start from the beginning for missions (not random)
+      dispatch({ type: 'START_GAME', payload: { startIndex: 0 } });
+      onStartGame();
+    } catch (err) {
+      console.error('Career mode error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load mission data.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [dispatch, onStartGame]);
 
   // Arcade mode - random exciting stock
   const handleArcadeMode = useCallback(async () => {

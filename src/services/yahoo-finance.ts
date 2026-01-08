@@ -19,6 +19,13 @@ interface FetchStockDataParams {
   interval?: Interval;
 }
 
+interface FetchHistoricalDataParams {
+  symbol: string;
+  startDate: string; // YYYY-MM-DD format
+  endDate: string;   // YYYY-MM-DD format
+  interval?: Interval;
+}
+
 /**
  * Fetch historical stock data from Yahoo Finance (raw, no caching)
  * For day trading: use 1m interval with 5d range (real-time feel)
@@ -57,6 +64,86 @@ export async function fetchStockData({
     return transformToCandles(result);
   } catch (error) {
     console.error('Yahoo Finance fetch error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Fetch historical stock data for a specific date range
+ * Used for Career Mode missions with historical events
+ *
+ * Note: Yahoo Finance only keeps 1-minute data for ~30 days, so for older dates
+ * we fall back to 5-minute intervals which are available for longer periods
+ */
+export async function fetchHistoricalData({
+  symbol,
+  startDate,
+  endDate,
+  interval = '5m',
+}: FetchHistoricalDataParams): Promise<CandleData[]> {
+  // Convert dates to Unix timestamps
+  // Add market hours: 9:30 AM to 4:00 PM EST
+  const startDateTime = new Date(`${startDate}T09:30:00-05:00`);
+  const endDateTime = new Date(`${endDate}T16:00:00-05:00`);
+
+  const period1 = Math.floor(startDateTime.getTime() / 1000);
+  const period2 = Math.floor(endDateTime.getTime() / 1000);
+
+  // Calculate how old the data is
+  const now = Date.now() / 1000;
+  const ageInDays = (now - period1) / (24 * 60 * 60);
+
+  // Yahoo Finance data availability:
+  // - 1m: only ~7-30 days (varies)
+  // - 5m: ~60 days
+  // - 15m/30m: ~60 days
+  // - 1h: ~730 days
+  // - 1d: unlimited
+
+  // Determine best interval based on data age
+  let effectiveInterval = interval;
+  if (ageInDays > 60) {
+    // Data is older than 60 days, use hourly or daily
+    effectiveInterval = ageInDays > 730 ? '1d' : '1h';
+    console.log(`[Historical] Data is ${Math.round(ageInDays)} days old, using ${effectiveInterval} interval`);
+  } else if (ageInDays > 7 && interval === '1m') {
+    // 1-minute data not available, use 5-minute
+    effectiveInterval = '5m';
+    console.log(`[Historical] 1m data not available for ${Math.round(ageInDays)} day old data, using 5m`);
+  }
+
+  const url = `${CORS_PROXY}${encodeURIComponent(
+    `${YAHOO_CHART_URL}/${symbol}?period1=${period1}&period2=${period2}&interval=${effectiveInterval}&includePrePost=false`
+  )}`;
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch historical data: ${response.status}`);
+    }
+
+    const data: YahooChartResponse = await response.json();
+
+    if (data.chart.error) {
+      throw new Error(data.chart.error.description);
+    }
+
+    const result = data.chart.result?.[0];
+    if (!result) {
+      throw new Error('No historical data returned from Yahoo Finance');
+    }
+
+    const candles = transformToCandles(result);
+    console.log(`[Historical] Fetched ${candles.length} candles for ${symbol} (${startDate} to ${endDate})`);
+
+    return candles;
+  } catch (error) {
+    console.error('Yahoo Finance historical fetch error:', error);
     throw error;
   }
 }

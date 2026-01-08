@@ -8,6 +8,7 @@ import type { LeverageOption } from '../../types/game';
 import { PortfolioHUD, PortfolioHUDCompact } from '../hud/PortfolioHUD';
 import { ProfitBurst } from '../effects/ProfitBurst';
 import { StreakAnnouncement } from '../effects/StreakFlame';
+import { TutorialOverlay } from '../tutorial';
 import { useGameEngine } from '../../hooks/useGameEngine';
 import { useKeyboardControls } from '../../hooks/useKeyboardControls';
 import { useSound } from '../../hooks/useSound';
@@ -31,9 +32,10 @@ function formatCandleTime(timestamp: number): string {
 interface GameScreenProps {
   onGameEnd: () => void;
   onBackToHome: () => void;
+  isTutorial?: boolean;
 }
 
-export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
+export function GameScreen({ onGameEnd, onBackToHome, isTutorial = false }: GameScreenProps) {
   const {
     state,
     buy,
@@ -78,6 +80,9 @@ export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
   const [showStreakAnnouncement, setShowStreakAnnouncement] = useState(false);
   const [announceStreak, setAnnounceStreak] = useState(0);
   const prevStreakRef = useRef(0);
+
+  // Tutorial state
+  const [tutorialStep, setTutorialStep] = useState(0);
 
   // Level and XP
   const [levelInfo, setLevelInfo] = useState({ level: 1, xp: 0, required: 1000 });
@@ -461,7 +466,7 @@ export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
 
       {/* Paused Overlay */}
       <AnimatePresence>
-        {state.gameStatus === 'paused' && (
+        {state.gameStatus === 'paused' && !isTutorial && (
           <motion.div
             className="absolute inset-0 bg-black/60 flex items-center justify-center z-30"
             initial={{ opacity: 0 }}
@@ -486,6 +491,18 @@ export function GameScreen({ onGameEnd, onBackToHome }: GameScreenProps) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Tutorial Overlay */}
+      {isTutorial && (
+        <TutorialOverlay
+          currentStepIndex={tutorialStep}
+          onAdvance={() => setTutorialStep((prev) => prev + 1)}
+          onSkip={onGameEnd}
+          onComplete={onGameEnd}
+          hasPosition={state.position !== null}
+          pnl={state.totalPnL}
+        />
+      )}
     </div>
   );
 }
