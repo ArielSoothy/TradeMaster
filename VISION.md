@@ -120,12 +120,32 @@ src/components/tutorial/TutorialOverlay.tsx
 - Same layout, different color themes for modes
 - Focus on gameplay first, no monetization in v1
 
-### Phase 2: Career Mode Full Integration - IN PROGRESS
+### Phase 2: Career Mode Full Integration - COMPLETED
+
+**Completed:**
+- [x] Wire Career Mode to load specific historical date ranges
+  - `fetchHistoricalData()` function with period1/period2 timestamps
+  - Auto-select optimal interval based on data age
+- [x] Integrate FTUE tutorial into first-launch flow
+  - WelcomeModal for first-time user detection
+  - TutorialOverlay integrated into GameScreen
+  - Tutorial step tracking with auto-advance
+- [x] Add mission briefing screen before career gameplay
+  - MissionBriefingScreen with historical context
+  - Win conditions, tips, and rewards display
+  - Boss battle special styling
+- [x] Add CareerScreen for chapter/mission navigation
+  - Progress tracking per chapter
+  - Mission unlock logic
+  - Grade display for completed missions
+
+**New Files:**
+```
+src/components/screens/CareerScreen.tsx
+src/components/screens/MissionBriefingScreen.tsx
+```
 
 **TODO:**
-- [ ] Wire Career Mode to load specific historical date ranges
-- [ ] Integrate FTUE tutorial into first-launch flow
-- [ ] Add mission briefing screen before career gameplay
 - [ ] Implement mission completion logic and rewards
 - [ ] Add mission win condition checking
 
