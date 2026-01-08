@@ -34,9 +34,10 @@ import {
 interface HomeScreenProps {
   onStartGame: () => void;
   onOpenLeaderboard?: () => void;
+  onOpenCareer?: () => void;
 }
 
-export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) {
+export function HomeScreen({ onStartGame, onOpenLeaderboard, onOpenCareer }: HomeScreenProps) {
   const { dispatch } = useGame();
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -269,7 +270,7 @@ export function HomeScreen({ onStartGame, onOpenLeaderboard }: HomeScreenProps) 
           transition={{ delay: 0.1 }}
         >
           <CareerModeCard
-            onClick={handleStartCareer}
+            onClick={onOpenCareer ?? handleStartCareer}
             disabled={isLoading}
           />
         </motion.div>

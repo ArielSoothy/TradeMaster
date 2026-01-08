@@ -5,6 +5,8 @@ import { HomeScreen } from './components/screens/HomeScreen';
 import { GameScreen } from './components/screens/GameScreen';
 import { ResultsScreen } from './components/screens/ResultsScreen';
 import { LeaderboardScreen } from './components/screens/LeaderboardScreen';
+import { CareerScreen } from './components/screens/CareerScreen';
+import { MissionBriefingScreen } from './components/screens/MissionBriefingScreen';
 import { ScreenShakeProvider } from './components/effects/ScreenShake';
 import { ParticleProvider } from './components/effects/ParticleSystem';
 import { WelcomeModal } from './components/tutorial';
@@ -13,19 +15,23 @@ import { submitSession, calculateBaselineMove, syncAchievement } from './service
 import { checkAchievements, type AchievementUnlock } from './services/achievements';
 import { initCandleCache } from './services/candle-cache';
 import { useGame } from './context/GameContext';
+import { fetchHistoricalData } from './services/yahoo-finance';
 import {
   isTutorialCompleted,
   markTutorialCompleted,
   TUTORIAL_CONFIG,
 } from './data/tutorial-scenarios';
+import type { Mission } from './types/career';
 
-type Screen = 'home' | 'game' | 'results' | 'leaderboard' | 'tutorial';
+type Screen = 'home' | 'game' | 'results' | 'leaderboard' | 'tutorial' | 'career' | 'mission-briefing';
 
 function AppContent() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
   const [newAchievements, setNewAchievements] = useState<AchievementUnlock[]>([]);
   const [showWelcome, setShowWelcome] = useState(false);
   const [isTutorialMode, setIsTutorialMode] = useState(false);
+  const [selectedMission, setSelectedMission] = useState<Mission | null>(null);
+  const [missionLoading, setMissionLoading] = useState(false);
   const { state, dispatch } = useGame();
   const { user, isAnonymous, refreshProfile } = useAuth();
 
@@ -89,6 +95,55 @@ function AppContent() {
   const handleStartGame = useCallback(() => {
     setCurrentScreen('game');
   }, []);
+
+  // Career mode handlers
+  const handleOpenCareer = useCallback(() => {
+    setCurrentScreen('career');
+  }, []);
+
+  const handleSelectMission = useCallback((mission: Mission) => {
+    setSelectedMission(mission);
+    setCurrentScreen('mission-briefing');
+  }, []);
+
+  const handleStartMission = useCallback(async () => {
+    if (!selectedMission) return;
+
+    setMissionLoading(true);
+    try {
+      // Fetch historical data for the mission's date range
+      const data = await fetchHistoricalData({
+        symbol: selectedMission.stockSymbol,
+        startDate: selectedMission.startDate,
+        endDate: selectedMission.endDate,
+        interval: '5m',
+      });
+
+      if (data.length < 20) {
+        console.error('Not enough historical data');
+        return;
+      }
+
+      // Load mission data into game context
+      dispatch({
+        type: 'LOAD_DATA',
+        payload: {
+          symbol: selectedMission.stockSymbol,
+          data,
+          mysteryMode: false,
+          gameMode: 'career',
+          missionId: selectedMission.id,
+        },
+      });
+
+      dispatch({ type: 'START_GAME', payload: { startIndex: 0 } });
+      setCurrentScreen('game');
+    } catch (err) {
+      console.error('Failed to load mission data:', err);
+    } finally {
+      setMissionLoading(false);
+    }
+  }, [selectedMission, dispatch]);
 
   const handleGameEnd = useCallback(async () => {
     // Record session to localStorage
@@ -206,9 +261,36 @@ function AppContent() {
 
   switch (currentScreen) {
     case 'home':
-      return <HomeScreen onStartGame={handleStartGame} onOpenLeaderboard={handleOpenLeaderboard} />;
+      return (
+        <HomeScreen
+          onStartGame={handleStartGame}
+          onOpenLeaderboard={handleOpenLeaderboard}
+          onOpenCareer={handleOpenCareer}
+        />
+      );
     case 'leaderboard':
       return <LeaderboardScreen onBack={handleBackToHome} />;
+    case 'career':
+      return (
+        <CareerScreen
+          onSelectMission={handleSelectMission}
+          onBack={handleBackToHome}
+        />
+      );
+    case 'mission-briefing':
+      return selectedMission ? (
+        <MissionBriefingScreen
+          mission={selectedMission}
+          onStart={handleStartMission}
+          onBack={() => setCurrentScreen('career')}
+          isLoading={missionLoading}
+        />
+      ) : (
+        <CareerScreen
+          onSelectMission={handleSelectMission}
+          onBack={handleBackToHome}
+        />
+      );
     case 'game':
       return (
         <GameScreen
